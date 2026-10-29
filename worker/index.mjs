@@ -1,12 +1,13 @@
 // Cloudflare Worker: serves index.html as a static asset and keeps an archive of rounds in D1.
 //
 //   GET /api/status            -> {first, last, count, firstTime, lastTime}
-//   GET /api/n/<16 digits>     -> {round, n, randomness, signature} or 404
-//   GET /api/round/<round>     -> same, by round number
+//   GET /api/n/<16 digits>     -> {n, rounds: [{round, n, randomness, signature}, ...]} newest first, or 404
+//   GET /api/round/<round>     -> {round, n, randomness, signature} or 404
 //   GET /api/range?from=&to=   -> {rounds: [...]} for a round range, newest first, at most RANGE_LIMIT
 //
 // A cron trigger runs archiveTick every minute: it records rounds newer than the archive's last
-// round, then backfills older rounds, within a per-run budget of relay requests (SUBREQUEST_BUDGET).
+// round, then backfills older rounds. SUBREQUEST_BUDGET bounds the subrequests one run may make:
+// every relay attempt (including failovers) and the D1 calls count, as Cloudflare counts them.
 // Rows only map N to a round; the page verifies each round's BLS signature in the browser.
 import { sha256 } from '@noble/hashes/sha2.js';
 import '../src/core.js';           // defines globalThis.SP (reads globalThis.__noble lazily)
@@ -17,6 +18,8 @@ const CHAIN = SP.CHAIN;
 const RANGE_LIMIT = 100;
 const FETCH_TIMEOUT_MS = 5000;
 const PARALLEL = 10;
+const D1_CALLS = 3;                 // bounds + two batch inserts per tick
+const TICK_DEADLINE_MS = 40000;     // stop starting fetches after this, so runs do not pile up
 
 const json = (body, status = 200, cache = 'no-store') =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': cache, 'access-control-allow-origin': '*' } });
@@ -25,16 +28,18 @@ const json = (body, status = 200, cache = 'no-store') =>
 function relays(env) {
   return (env.DRAND_RELAYS ? String(env.DRAND_RELAYS).split(',') : CHAIN.relays).map(s => s.trim()).filter(Boolean);
 }
-async function fetchRound(env, round) {
+// budget, when given, is {left: n}: each relay attempt takes one; none left means give up.
+async function fetchRound(env, round, budget) {
   let lastErr;
   for (const relay of relays(env)) {
+    if (budget) { if (budget.left <= 0) break; budget.left--; }
     try {
       const r = await fetch(relay + '/' + CHAIN.hash + '/public/' + round, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
     } catch (e) { lastErr = e; }
   }
-  throw lastErr || new Error('no relay');
+  throw lastErr || new Error('request budget exhausted');
 }
 // Turn a relay response into an archive row, or throw. Checks shape and randomness = SHA-256(signature).
 export function rowFromBeacon(b, expectedRound) {
@@ -57,13 +62,17 @@ async function insertRows(db, rows) {
   await db.batch(rows.map(r => stmt.bind(r.round, r.n, r.randomness, r.signature)));
 }
 
-// Fetch the given rounds (in order), PARALLEL at a time; stop at the first failure so the next run
-// retries from there and the archive never develops holes. Returns the rows obtained.
-async function collect(env, rounds) {
+// Fetch the given rounds (in order), PARALLEL at a time, within the budget and the deadline; stop at
+// the first failure so the next run retries from there and the archive never develops holes.
+// Returns the rows obtained.
+async function collect(env, rounds, budget, deadline) {
   const out = [];
-  for (let i = 0; i < rounds.length; i += PARALLEL) {
-    const chunk = rounds.slice(i, i + PARALLEL);
-    const results = await Promise.all(chunk.map(r => fetchRound(env, r).then(b => rowFromBeacon(b, r)).catch(e => ({ error: e, round: r }))));
+  for (let i = 0; i < rounds.length;) {
+    if (Date.now() > deadline) { console.log('archive: deadline reached'); return out; }
+    const chunk = rounds.slice(i, i + Math.min(PARALLEL, budget.left));
+    if (!chunk.length) return out;
+    i += chunk.length;
+    const results = await Promise.all(chunk.map(r => fetchRound(env, r, budget).then(b => rowFromBeacon(b, r)).catch(e => ({ error: e, round: r }))));
     for (const r of results) {
       if (r.error) { console.log('archive: round ' + r.round + ' failed: ' + (r.error.message || r.error)); return out; }
       out.push(r);
@@ -74,21 +83,25 @@ async function collect(env, rounds) {
 
 // One scheduled run. Exported for tests; `now` is unix seconds.
 export async function archiveTick(env, now = Math.floor(Date.now() / 1000)) {
-  const budget = Math.max(1, Number(env.SUBREQUEST_BUDGET) || 45);
+  const total = Math.max(D1_CALLS + 1, Number(env.SUBREQUEST_BUDGET) || 45);
+  const budget = { left: total - D1_CALLS };          // relay attempts this run may make
+  const deadline = Date.now() + TICK_DEADLINE_MS;
   const current = SP.roundAt(now - 1);                 // one second of slack for relay lag
   if (current < 1) return { forward: 0, backward: 0 };
   const { first, last } = await bounds(env.DB);
   // Forward: everything newer than the archive. An empty archive starts a little behind "now".
   const fwdStart = last ? last + 1 : Math.max(1, current - 19);
   const fwd = [];
-  for (let r = fwdStart; r <= current && fwd.length < budget; r++) fwd.push(r);
-  const fwdRows = await collect(env, fwd);
+  for (let r = fwdStart; r <= current && fwd.length < budget.left; r++) fwd.push(r);
+  const fwdRows = await collect(env, fwd, budget, deadline);
   await insertRows(env.DB, fwdRows);
-  // Backward: older rounds, with whatever budget is left.
+  // Backward: below the archive's first round, or below what was just inserted into an empty
+  // archive. Nothing inserted into an empty archive means nothing to anchor to, so stop.
+  const anchor = first ?? (fwdRows.length ? fwdRows[0].round : null);
+  if (anchor === null) return { forward: fwdRows.length, backward: 0 };
   const bwd = [];
-  const bwdStart = (first ?? fwdStart) - 1;
-  for (let r = bwdStart; r >= 1 && bwd.length < budget - fwd.length; r--) bwd.push(r);
-  const bwdRows = await collect(env, bwd);
+  for (let r = anchor - 1; r >= 1 && bwd.length < budget.left; r--) bwd.push(r);
+  const bwdRows = await collect(env, bwd, budget, deadline);
   await insertRows(env.DB, bwdRows);
   return { forward: fwdRows.length, backward: bwdRows.length };
 }
@@ -104,8 +117,10 @@ async function api(url, env) {
       firstTime: b.first ? SP.roundTime(b.first) : null, lastTime: b.last ? SP.roundTime(b.last) : null }, 200, 'public, max-age=30');
   }
   if ((m = /^\/api\/n\/(\d{16})$/.exec(p))) {
-    const row = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE n = ?1').bind(m[1]).first();
-    return row ? json(row, 200, 'public, max-age=31536000, immutable') : json({ error: 'not in archive' }, 404);
+    // Distinct rounds can produce the same N (rare, but expected a few times per year of rounds).
+    // The answer is cached briefly, not immutably: backfill can add an older round later.
+    const { results } = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE n = ?1 ORDER BY round DESC').bind(m[1]).all();
+    return results.length ? json({ n: m[1], rounds: results }, 200, 'public, max-age=300') : json({ error: 'not in archive' }, 404);
   }
   if ((m = /^\/api\/round\/(\d{1,12})$/.exec(p))) {
     const row = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE round = ?1').bind(Number(m[1])).first();

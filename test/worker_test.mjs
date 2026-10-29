@@ -45,6 +45,10 @@ await new Promise(r => mock.listen(0, '127.0.0.1', r));
 const MOCK = 'http://127.0.0.1:' + mock.address().port;
 
 // ---- unit: archiveTick against an in-memory store ----
+// SUBREQUEST_BUDGET 30 reserves 3 D1 calls, leaving 27 relay attempts per tick.
+let attempts = 0;
+const realFetch = globalThis.fetch;
+globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
 {
   const rows = new Map();
   const mem = {
@@ -56,35 +60,58 @@ const MOCK = 'http://127.0.0.1:' + mock.address().port;
   const now = 1793242214;
   const cur = SP.roundAt(now - 1);
   let r = await archiveTick(env, now);
-  check(r.forward === 20 && r.backward === 10, `first tick fills 20 forward + 10 backward (${r.forward}+${r.backward})`);
-  check(rows.has(cur) && rows.has(cur - 29) && rows.size === 30, 'archive covers current-29 .. current');
+  check(r.forward === 20 && r.backward === 7 && attempts === 27, `first tick fills 20 forward + 7 backward with 27 attempts (${r.forward}+${r.backward}, ${attempts})`);
+  check(rows.has(cur) && rows.has(cur - 26) && rows.size === 27, 'archive covers current-26 .. current');
   r = await archiveTick(env, now + 6);       // two new rounds exist now
-  check(r.forward === 2 && r.backward === 28, `second tick: 2 forward + 28 backward (${r.forward}+${r.backward})`);
-  failing.add(cur - 57 - 5);                 // archive now spans cur-57..cur; the next backfill hits this at its 5th round
+  check(r.forward === 2 && r.backward === 25, `second tick: 2 forward + 25 backward (${r.forward}+${r.backward})`);
+  failing.add(cur - 51 - 5);                 // archive now spans cur-51..cur; the next backfill hits this at its 5th round
   r = await archiveTick(env, now + 6);
   check(r.forward === 0 && r.backward === 4, `backfill stops at the first failed round (${r.backward})`);
   failing.clear();
   r = await archiveTick(env, now + 6);
-  check(r.backward === 30, 'and resumes from it next run');
+  check(r.backward === 27, 'and resumes from it next run');
   const ks = [...rows.keys()];
   check(Math.max(...ks) - Math.min(...ks) + 1 === rows.size, 'no holes in the archive');
+  // budget counts relay attempts: with a dead first relay every round costs two, and D1 calls are reserved
+  const dead = 'http://127.0.0.1:1';
+  const env2 = { DB: mem, DRAND_RELAYS: dead + ',' + MOCK, SUBREQUEST_BUDGET: '30' };
+  attempts = 0;
+  r = await archiveTick(env2, now + 6);
+  check(r.forward === 0 && r.backward === 10 && attempts === 27, `failover attempts count against the budget: 10 rounds, 27 attempts (${r.backward}, ${attempts})`);
+  // an empty archive whose forward fetch fails inserts nothing and does not backfill
+  rows.clear(); failing.add(cur - 19);
+  r = await archiveTick(env, now);
+  check(r.forward === 0 && r.backward === 0 && rows.size === 0, 'empty archive with a failing first round stays empty rather than anchoring backfill');
+  failing.clear();
 }
 
 // ---- integration: wrangler dev (local D1) ----
 const PORT = 8790 + Math.floor(Math.random() * 100);
 execSync('npx wrangler d1 execute randomsemiprime-archive --local --file schema.sql', { cwd: ROOT, stdio: 'ignore' });
 execSync('npx wrangler d1 execute randomsemiprime-archive --local --command "DELETE FROM rounds"', { cwd: ROOT, stdio: 'ignore' });
-const dev = spawn('npx', ['wrangler', 'dev', '--test-scheduled', '--ip', '127.0.0.1', '--port', String(PORT),
-  '--var', 'DRAND_RELAYS:' + MOCK, '--var', 'SUBREQUEST_BUDGET:30'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
-let devLog = '';
-dev.stdout.on('data', d => { devLog += d; }); dev.stderr.on('data', d => { devLog += d; });
 const base = 'http://127.0.0.1:' + PORT;
-const get = async (p) => { const r = await fetch(base + p); return { status: r.status, body: await r.json().catch(() => null), headers: r.headers }; };
-try {
+let dev = null, devLog = '';
+async function startDev() {
+  // wrangler's own bin, not npx, so signals reach it and the port is released on stop
+  dev = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--test-scheduled', '--ip', '127.0.0.1', '--port', String(PORT),
+    '--var', 'DRAND_RELAYS:' + MOCK, '--var', 'SUBREQUEST_BUDGET:33'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  dev.stdout.on('data', d => { devLog += d; }); dev.stderr.on('data', d => { devLog += d; });
   let up = false;
   for (let i = 0; i < 120 && !up; i++) { await new Promise(r => setTimeout(r, 500)); try { up = (await fetch(base + '/api/status')).ok; } catch (e) { /* not yet */ } }
   if (!up) throw new Error('wrangler dev did not start:\n' + devLog.slice(-2000));
-  await fetch(base + '/api/status');
+}
+async function stopDev() {
+  if (!dev) return;
+  const d = dev; dev = null;
+  const exited = new Promise(r => d.on('exit', r));
+  d.kill('SIGTERM');
+  await Promise.race([exited, new Promise(r => setTimeout(r, 5000))]);
+  if (d.exitCode === null) { d.kill('SIGKILL'); await exited; }
+  await new Promise(r => setTimeout(r, 500));   // let the port close
+}
+const get = async (p) => { const r = await fetch(base + p); return { status: r.status, body: await r.json().catch(() => null), headers: r.headers }; };
+try {
+  await startDev();
   const s0 = (await get('/api/status')).body;
   check(s0.count === 0 && s0.first === null, 'fresh archive is empty');
   const t0 = await fetch(base + '/__scheduled?cron=*+*+*+*+*');
@@ -99,14 +126,23 @@ try {
   const row = range.rounds[7];
   check(/^\d{16}$/.test(row.n) && row.n === SP.deriveN(row.randomness).toString(), 'rows carry N derived from randomness');
   const byN = await get('/api/n/' + row.n);
-  check(byN.status === 200 && byN.body.round === row.round && /immutable/.test(byN.headers.get('cache-control')), 'lookup by N finds the round, cached immutably');
+  check(byN.status === 200 && byN.body.rounds.length === 1 && byN.body.rounds[0].round === row.round && /max-age=300/.test(byN.headers.get('cache-control')), 'lookup by N lists the round');
+  // two rounds with the same N are both listed, newest first (seeded into the local D1, which is
+  // only writable from outside while the dev server is stopped)
+  await stopDev();
+  const seedSql = path.join(ROOT, '.wrangler', 'seed-test.sql');
+  fs.writeFileSync(seedSql, `INSERT INTO rounds (round, n, randomness, signature) VALUES (7, '${row.n}', '${row.randomness}', '${row.signature}');`);
+  execSync('npx wrangler d1 execute randomsemiprime-archive --local --file ' + seedSql, { cwd: ROOT, stdio: 'ignore' });
+  await startDev();
+  const twins = await get('/api/n/' + row.n);
+  check(twins.body.rounds.length === 2 && twins.body.rounds[0].round === row.round && twins.body.rounds[1].round === 7, `colliding N lists both rounds newest first (${JSON.stringify(twins.body.rounds.map(r => r.round))})`);
   const byR = await get('/api/round/' + row.round);
   check(byR.status === 200 && byR.body.n === row.n, 'lookup by round works');
   check((await get('/api/n/1234567890123456')).status === 404, 'unknown N is 404');
   check((await get('/api/n/123')).status === 404, 'short N is 404');
   check((await get('/api/range?from=5&to=4')).status === 400, 'reversed range is 400');
   check((await get('/api/range?from=1&to=101')).status === 400, '101-round range is 400');
-  check((await get('/api/range?from=1&to=100')).body.rounds.length === 0, 'empty range is an empty list');
+  check((await get('/api/range?from=101&to=200')).body.rounds.length === 0, 'empty range is an empty list');
   check((await get('/api/nope')).status === 404, 'unknown api path is 404');
   check((await fetch(base + '/api/status', { method: 'POST' })).status === 405, 'POST is 405');
   const page = await fetch(base + '/');
@@ -114,6 +150,6 @@ try {
   check((await fetch(base + '/worker/index.mjs')).status === 404, 'worker source is not served as an asset');
   check((await fetch(base + '/schema.sql')).status === 404, 'schema.sql is not served as an asset');
 } catch (e) { check(false, 'integration: ' + (e.message || e)); }
-finally { dev.kill('SIGTERM'); mock.close(); }
+finally { await stopDev(); mock.close(); }
 console.log('\n%d failures', fails);
 process.exit(fails ? 1 : 0);

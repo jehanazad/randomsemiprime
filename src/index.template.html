@@ -435,6 +435,7 @@
   async function loadArchiveStatus() {
     try {
       archive = await apiGet('/api/status');
+      if (!archive) throw new Error('no archive at this address');
       $('vArchive').textContent = archive && archive.count
         ? 'Archive: ' + archive.count.toLocaleString() + ' rounds, from ' + archive.first + ' (' + utc(archive.firstTime) + ' UTC) to ' + archive.last + ' (' + utc(archive.lastTime) + ' UTC). Older rounds are still being added.'
         : 'Archive: no rounds recorded yet.';
@@ -484,26 +485,47 @@
     }
     throw new Error('enter a round number, a 16-digit number, or its 5 words');
   }
+  // Both return {b, how} without touching the page, so a stale request can be dropped.
   async function verifyByRound(r) {
-    const b = validateBeacon(await fetchRound(r));
-    showVerified(b, roundNote(b, 'Fetched from the drand relays; signature checked in your browser.'));
+    return { b: validateBeacon(await fetchRound(r)), how: 'Fetched from the drand relays; signature checked in your browser.' };
   }
   async function verifyByN(N) {
-    const row = await apiGet('/api/n/' + N);
-    if (!row) throw new Error('this number is not in the archive.' + coverage() + ' If you know the round number or when it was shown, use those instead.');
-    const b = validateBeacon(row);
-    if (b.N !== N) throw new Error('the archive returned round ' + b.round + ', which does not produce this number; refusing to show it');
-    showVerified(b, roundNote(b, 'Found in the archive; signature checked in your browser.'));
+    const res = await apiGet('/api/n/' + N);
+    const rows = (res && res.rounds) || [];
+    if (!rows.length) throw new Error('this number is not in the archive.' + coverage() + ' If you know the round number or when it was shown, use those instead.');
+    // Every returned round is checked here; a row that does not verify, or does not produce N, is ignored.
+    const good = [], bad = [];
+    for (const row of rows) {
+      let b = null;
+      try { b = validateBeacon(row); } catch (e) { b = null; }
+      if (b && b.sigOk && b.randOk && b.N === N) good.push(b); else bad.push(Number(row && row.round));
+    }
+    const plural = (n, w) => n === 1 ? w : w + 's';
+    if (!good.length) throw new Error('the archive returned ' + plural(bad.length, 'round') + ' ' + bad.join(', ') + ' for this number, but ' + (bad.length === 1 ? 'it does not verify' : 'none of them verify') + '; refusing to show it');
+    const b = good[0];
+    let how = 'Found in the archive; signature checked in your browser.';
+    if (good.length > 1) how += ' The same number was also shown in ' + good.slice(1).map(x => 'round ' + x.round + ' (' + utc(x.time) + ' UTC)').join(' and ') + '.';
+    if (bad.length) how += ' The archive\'s ' + plural(bad.length, 'row') + ' for ' + plural(bad.length, 'round') + ' ' + bad.join(', ') + ' failed verification and ' + (bad.length === 1 ? 'was' : 'were') + ' ignored.';
+    return { b, how };
   }
+  let verifySeq = 0;                 // only the latest verify request may write to the page
   $('vFetchBtn').addEventListener('click', async () => {
+    const seq = ++verifySeq;
     let q;
     try { q = parseQuery($('vQuery').value); } catch (e) { $('vErr').textContent = e.message; return; }
     $('vErr').textContent = q.round ? 'fetching round ' + q.round + '…' : 'looking up ' + q.N + '…';
-    try { if (q.round) await verifyByRound(q.round); else await verifyByN(q.N); }
-    catch (e) { $('vErr').textContent = (q.round ? 'could not fetch/verify round ' + q.round + ': ' : '') + (e.message || e); }
+    try {
+      const r = q.round ? await verifyByRound(q.round) : await verifyByN(q.N);
+      if (seq !== verifySeq) return;
+      showVerified(r.b, roundNote(r.b, r.how));
+    } catch (e) {
+      if (seq !== verifySeq) return;
+      $('vErr').textContent = (q.round ? 'could not fetch/verify round ' + q.round + ': ' : '') + (e.message || e);
+    }
   });
   $('vQuery').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
+    verifySeq++;
     try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.')); }
     catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
@@ -538,7 +560,9 @@
     const ms = mode === 'utc' ? Date.UTC(y, mo - 1, d, h, mi, s) : new Date(y, mo - 1, d, h, mi, s).getTime();
     return Math.floor(ms / 1000);
   }
+  let rangeSeq = 0;                  // only the latest range lookup may write to the page
   $('vRangeBtn').addEventListener('click', async () => {
+    const seq = ++rangeSeq;
     const err = $('vRangeErr'), msg = $('vRangeMsg'), list = $('vRangeList');
     err.textContent = ''; msg.textContent = ''; list.innerHTML = '';
     const mode = $('vTz').value;
@@ -556,11 +580,13 @@
     let archiveNote = '';
     try { const res = await apiGet('/api/range?from=' + r1 + '&to=' + r2); for (const row of (res && res.rounds) || []) rows.set(Number(row.round), row); }
     catch (e) { archiveNote = ' Archive unavailable, so everything was fetched from the relays.'; }
+    if (seq !== rangeSeq) return;
     const missing = []; for (let r = r1; r <= r2; r++) if (!rows.has(r)) missing.push(r);
     let failed = 0;
     await Promise.all(Array.from({ length: Math.min(6, missing.length) }, async (_, lane) => {
       for (let i = lane; i < missing.length; i += 6) { try { rows.set(missing[i], await fetchRound(missing[i])); } catch (e) { failed++; } }
     }));
+    if (seq !== rangeSeq) return;
     const items = [];
     for (let r = r2; r >= r1; r--) {
       const when = utc(SP.roundTime(r)).slice(11) + ' UTC';

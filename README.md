@@ -45,10 +45,17 @@ August 2023, so full backfill takes a long time at the default budget; raise it 
 A failed relay request stops that run's backfill at the failed round, so the archive never has
 holes between its first and last round.
 
-The archive only maps a number to a round and stores the round's randomness and signature; the
-page re-verifies the signature itself, so a wrong or tampered archive row is rejected in the
-browser. API: `GET /api/status`, `GET /api/n/<16 digits>`, `GET /api/round/<round>`,
-`GET /api/range?from=<round>&to=<round>` (at most 100 rounds). Schema: `schema.sql`.
+The archive only maps a number to a round and stores the round's randomness and signature. The
+Worker checks `randomness = SHA-256(signature)` but not the BLS signature (that would exceed the
+free plan's 10 ms of CPU per run); the page re-verifies the signature itself, so a wrong or
+tampered archive row is rejected in the browser and never shown as genuine. Distinct rounds can
+share a number (a few times per year of rounds), so a lookup by number returns every round that
+produced it. Budget note: the whole tick is CPU-light (about 4 ms for 45 rounds in Node), but if
+the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BUDGET`.
+
+API: `GET /api/status`, `GET /api/n/<16 digits>` (`{n, rounds: [...]}`, newest first),
+`GET /api/round/<round>`, `GET /api/range?from=<round>&to=<round>` (at most 100 rounds).
+Schema: `schema.sql`.
 
 ## Verify independently
 

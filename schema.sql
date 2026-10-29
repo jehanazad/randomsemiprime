@@ -7,4 +7,6 @@ CREATE TABLE IF NOT EXISTS rounds (
   randomness TEXT    NOT NULL,      -- 32 bytes hex
   signature  TEXT    NOT NULL       -- 48 bytes hex, verifiable against the chain public key
 );
-CREATE UNIQUE INDEX IF NOT EXISTS rounds_n ON rounds(n);
+-- Not unique: distinct rounds can share an N. Dropped first so an older unique index is replaced.
+DROP INDEX IF EXISTS rounds_n;
+CREATE INDEX rounds_n ON rounds(n);

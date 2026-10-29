@@ -70,7 +70,10 @@ with sync_playwright() as p:
             return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004)})
         if path.startswith('n/'):
             for r, n in N_OF.items():
-                if n == path[2:]: return js(ROUNDS[r])
+                if n == path[2:]:
+                    rows = [ROUNDS[r]]
+                    if r == 1: rows.append(fake_round(5))      # a bogus archive row that must be ignored
+                    return js({'n': n, 'rounds': rows})
             return js({'error': 'not in archive'}, 404)
         if path.startswith('range?'):
             q = dict(kv.split('=') for kv in path[6:].split('&'))
@@ -176,13 +179,19 @@ with sync_playwright() as p:
     msg, err = verify_query('2842566290086427')
     check(msg.startswith('Genuine: round 20000000 was the number showing from 2025-07-18 01:49:24 UTC') and 'archive' in msg, f'16-digit number is traced to its round via the archive ({msg or err})')
     check(page.inner_text('#vrN').replace(' ', '') == '2842566290086427' and page.inner_text('#vrSig') == 'BLS signature valid', 'archive row is re-verified in the browser')
-    check(page.inner_text('#vAnswer') == '' and page.inner_text('#vResult') == '', 'factor check is reset for the new number')
+    check(page.input_value('#vAnswer') == '' and page.inner_text('#vResult') == '', 'factor check is reset for the new number')
     page.fill('#vAnswer', '66752887 42583421'); page.press('#vAnswer', 'Enter')
     check(page.inner_text('#vResult').startswith('Correct'), 'both factors accepted for the traced number')
     msg, err = verify_query('before network eager tiny drop')
     check(msg.startswith('Genuine: round 20000000'), f'five words are traced to the same round ({msg or err})')
     msg, err = verify_query('Before NETWORK eage tiny drop')
     check(msg.startswith('Genuine: round 20000000'), f'words are case-insensitive and accept 4-letter prefixes ({msg or err})')
+    msg, err = verify_query('8766449459018651')
+    check(msg.startswith('Genuine: round 1 ') and "row for round 5 failed verification and was ignored" in msg, f'bogus archive row is ignored, genuine one shown ({msg or err})')
+    page.fill('#vAnswer', 'dinner expose angry'); page.press('#vAnswer', 'Enter')
+    check(page.inner_text('#vResult').startswith('Wrong'), 'words containing x parse as words')
+    page.fill('#vAnswer', 'accident gown swamp x 97151699'); page.press('#vAnswer', 'Enter')
+    check(page.inner_text('#vResult').startswith('Wrong — product'), 'a standalone x separates a word factor from a digit factor: ' + page.inner_text('#vResult'))
     msg, err = verify_query('1234567890123457')
     check(err.startswith('this number is not in the archive.') and 'covers rounds 1 to 33470004' in err, f'unknown number explains archive coverage ({err})')
     msg, err = verify_query('before network eager tiny')
