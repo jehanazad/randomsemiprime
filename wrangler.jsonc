@@ -1,0 +1,12 @@
+// Cloudflare deploy config: serves the committed index.html as static assets on randomsemiprime.com.
+// Deploy with `npx wrangler deploy` (needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, or `wrangler login`).
+// Files listed in .assetsignore are not uploaded.
+{
+  "name": "randomsemiprime",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./", "html_handling": "auto-trailing-slash", "not_found_handling": "404-page" },
+  "routes": [
+    { "pattern": "randomsemiprime.com", "custom_domain": true },
+    { "pattern": "www.randomsemiprime.com", "custom_domain": true }
+  ]
+}

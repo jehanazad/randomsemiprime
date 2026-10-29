@@ -1,0 +1,15 @@
+# Only index.html is the site; everything else stays in the repo but is not served.
+.git
+.gitignore
+.assetsignore
+node_modules
+src
+test
+build.mjs
+package.json
+package-lock.json
+wrangler.jsonc
+*.md
+*.py
+*.json
+__pycache__

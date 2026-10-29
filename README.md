@@ -68,9 +68,15 @@ python3 test/browser_test.py --offline
 
 ## Deploy
 
-The site is the single file `index.html`; there is no server. On Cloudflare Pages connect this
-repository with build command `node build.mjs` and build output directory `/` (root), or skip
-the build and serve the committed `index.html` as a static asset. Any static host works.
+The site is the single file `index.html`; there is no server. `wrangler.jsonc` deploys it to
+Cloudflare as a static-assets Worker on `randomsemiprime.com` (only `index.html` is uploaded;
+see `.assetsignore`):
+
+```
+npx wrangler deploy          # needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID, or `npx wrangler login`
+```
+
+Any static host works just as well: serve the committed `index.html`, no build step needed.
 
 ## Trust model
 
