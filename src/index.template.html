@@ -90,7 +90,6 @@
       <div class="status">
         <span>round <b id="liveRound">—</b></span>
         <span><b id="liveTime">—</b> UTC</span>
-        <span id="liveSig" class="pill">—</span>
       </div>
       <div class="row">
         <button class="primary" id="captureBtn" disabled>Capture this number</button>
@@ -98,6 +97,7 @@
         <span class="small">This number stays until you press Update. Capture freezes it and starts the clock.</span>
       </div>
       <div class="err small" id="liveErr"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:8px"><span id="liveSig" class="pill">drand sig …</span></div>
     </div>
 
     <div class="card" id="feedCard">
@@ -141,13 +141,12 @@
   <!-- ================= VERIFY ================= -->
   <section id="tab-verify" hidden>
     <div class="card">
-      <label class="small" for="vQuery" style="display:block">Enter a round number, a 16-digit number, or its 5 words. A number or words are looked up in the archive to find their round; the round's signature is then checked here, in your browser.</label>
+      <label class="small" for="vQuery" style="display:block">Enter a round number, a 16-digit number, or its 5 words.</label>
       <div class="row" style="margin-top:6px">
         <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits (spaces allowed) · five words" style="flex:1 1 260px">
         <button class="primary" id="vFetchBtn">Verify</button>
       </div>
       <div class="err small" id="vErr"></div>
-      <div class="small" id="vArchive" style="margin-top:6px"></div>
     </div>
     <div class="card" id="vCard" hidden>
       <div class="status">
@@ -211,6 +210,7 @@
       <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester. It does not stop a device from factoring a 16-digit number instantly, so the test is only meaningful if the person being tested has no device and no confederate. The factors are never shown; the page only checks an answer against the number. Anyone with the round number and the spec can compute them, so this is a courtesy against casual snooping, not a secret.</p>
       <h3>Verify independently</h3>
       <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>.</p>
+      <p class="small" id="archiveStatus"></p>
     </div>
   </section>
 
@@ -241,7 +241,7 @@
     document.querySelectorAll('nav [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
     ['live', 'verify', 'about'].forEach(t => $('tab-' + t).hidden = (t !== name));
   }
-  document.querySelectorAll('nav [role=tab]').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); if (b.dataset.tab === 'verify') loadArchiveStatus(); }));
+  document.querySelectorAll('nav [role=tab]').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); if (b.dataset.tab === 'about') loadArchiveStatus(); }));
 
   async function fetchWithTimeout(url, ms) {
     const ctl = new AbortController();
@@ -280,7 +280,7 @@
     const b = focused;
     $('liveRound').textContent = b.round;
     $('liveTime').textContent = utc(b.time);
-    setPill($('liveSig'), 'ok', 'signature verified');
+    setPill($('liveSig'), 'ok', 'drand sig ✓');
     $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
     renderWords($('liveWords'), SP.encodeN(b.N));
     $('captureBtn').disabled = false;
@@ -319,7 +319,7 @@
       $('liveErr').textContent = 'Beacon unavailable: ' + (e.message || e) + (liveErrCount > 1 ? ' (' + liveErrCount + ' failures)' : '');
       setPill(document.querySelector('#beaconStatus .pill'), 'bad', 'beacon unreachable');
       // A focused round was already verified, so it stays readable and capturable.
-      if (!focused) { setPill($('liveSig'), 'bad', 'no verified round'); $('captureBtn').disabled = true; }
+      if (!focused) { setPill($('liveSig'), 'bad', 'drand sig ✗'); $('captureBtn').disabled = true; }
     }
   }
   $('updateBtn').addEventListener('click', () => { if (latest) { focused = latest; renderFocused(); } });
@@ -428,12 +428,12 @@
       const health = t.error && (!t.finished || t.error.at > t.finished.at) ? ' Last run failed at ' + utc(t.error.at) + ' UTC: ' + t.error.message
         : t.finished ? ' Last run ' + utc(t.finished.at) + ' UTC (+' + t.finished.forward + ' new, +' + t.finished.backward + ' older).'
         : t.started ? ' A run started at ' + utc(t.started.at) + ' UTC and has not finished.' : ' No run recorded yet.';
-      $('vArchive').textContent = (archive.count
+      $('archiveStatus').textContent = (archive.count
         ? 'Archive: ' + archive.count.toLocaleString() + ' rounds, from ' + archive.first + ' (' + utc(archive.firstTime) + ' UTC) to ' + archive.last + ' (' + utc(archive.lastTime) + ' UTC). Older rounds are still being added.'
         : 'Archive: no rounds recorded yet.') + health;
     } catch (e) {
       archive = null;
-      $('vArchive').textContent = 'Archive unavailable (' + (e.message || e) + '). Rounds can still be verified by number, and ranges are fetched from the drand relays.';
+      $('archiveStatus').textContent = 'Archive unavailable (' + (e.message || e) + '). Rounds can still be verified by number, and ranges are fetched from the drand relays.';
     }
   }
   function coverage() {

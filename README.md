@@ -56,7 +56,7 @@ the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BU
 count against a separate, higher limit and are not budgeted.
 
 Each tick records when it started and how it ended in the `meta` table, and `/api/status` (and
-the Verify tab) report it, so the cron's health is visible without log access.
+the last line of the How it Works tab) report it, so the cron's health is visible without log access.
 
 API: `GET /api/status`, `GET /api/n/<16 digits>` (`{n, rounds: [...]}`, newest first),
 `GET /api/round/<round>`, `GET /api/range?from=<round>&to=<round>` (at most 100 rounds).

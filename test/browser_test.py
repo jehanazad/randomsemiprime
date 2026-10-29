@@ -100,7 +100,7 @@ with sync_playwright() as p:
     check(tabs == ['How it Works', 'Generate', 'Verify'], f'tabs are in order ({tabs})')
     check(page.get_attribute('nav [data-tab=live]', 'aria-selected') == 'true' and page.is_visible('#tab-live') and not page.is_visible('#tab-about'), 'Generate is the landing tab')
     page.wait_for_function("document.getElementById('captureBtn').disabled === false", timeout=20000)
-    check(page.inner_text('#liveSig') == 'signature verified', 'live round shows verified signature')
+    check(page.inner_text('#liveSig') == 'drand sig ✓', 'live round shows the drand signature tag')
     live_round = page.inner_text('#liveRound')
     live_n = page.inner_text('#liveN').replace(' ', '')
     check(len(live_n) == 16 and live_n.isdigit(), f'live N is 16 digits ({live_n})')
@@ -164,9 +164,11 @@ with sync_playwright() as p:
     check(page.is_visible('#liveCard') and page.is_visible('#feedCard') and not page.is_visible('#capCard'), 'back to live')
 
     # verify tab: by round number
+    page.click('nav [data-tab=about]')
+    page.wait_for_function("document.getElementById('archiveStatus').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
+    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#archiveStatus') and page.inner_text('#archiveStatus').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older).'), 'archive coverage and last run are shown on How it Works: ' + page.inner_text('#archiveStatus'))
     page.click('nav [data-tab=verify]')
-    page.wait_for_function("document.getElementById('vArchive').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
-    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#vArchive') and page.inner_text('#vArchive').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older).'), 'archive coverage and last run are shown: ' + page.inner_text('#vArchive'))
+    check(page.inner_text('#tab-verify label[for=vQuery]') == 'Enter a round number, a 16-digit number, or its 5 words.', 'verify prompt is one sentence')
     page.fill('#vQuery', '1'); page.press('#vQuery', 'Enter')
     page.wait_for_function("!document.getElementById('vCard').hidden", timeout=15000)
     check(page.inner_text('#vrN').replace(' ', '') == '8766449459018651', 'verify by round number recomputes round 1 N from spec')
