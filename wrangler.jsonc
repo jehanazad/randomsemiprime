@@ -1,10 +1,26 @@
-// Cloudflare deploy config: serves the committed index.html as static assets on randomsemiprime.com.
-// Deploy with `npx wrangler deploy` (needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, or `wrangler login`).
-// Files listed in .assetsignore are not uploaded.
+// Cloudflare deploy config: index.html as a static asset plus the archive Worker (worker/index.mjs).
+// Deploy with `npx wrangler deploy` (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID, or `npx wrangler login`).
+// Files listed in .assetsignore are not uploaded. Schema for the D1 database is in schema.sql.
 {
   "name": "randomsemiprime",
+  "main": "worker/index.mjs",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./", "html_handling": "auto-trailing-slash", "not_found_handling": "404-page" },
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "randomsemiprime-archive", "database_id": "4ae6ef9d-cf62-48f2-86f4-67693dac8dfb" }
+  ],
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    // Relay requests per cron run: new rounds first, the rest backfills older ones.
+    // The Workers free plan allows 50 subrequests per invocation; paid plans allow 1000.
+    "SUBREQUEST_BUDGET": "45"
+  },
   "routes": [
     { "pattern": "randomsemiprime.com", "custom_domain": true },
     { "pattern": "www.randomsemiprime.com", "custom_domain": true }

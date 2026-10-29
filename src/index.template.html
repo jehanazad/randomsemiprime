@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Beacon Semiprime</title>
+<link rel="icon" href="data:,">
 <meta name="description" content="Fresh 16-digit semiprimes derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
 <style>
   :root {
@@ -50,6 +51,10 @@
   .feed .n { font: 500 17px var(--mono); letter-spacing: .03em; }
   .feed .meta { font-size: 13px; color: var(--muted); }
   .feed .w { font-size: 14px; flex-basis: 100%; }
+  .feed li.gap { color: var(--muted); font-size: 14px; }
+  button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
+  input[type=datetime-local] { font: inherit; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); max-width: 100%; }
+  select { font: inherit; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
   .result { margin-top: 8px; font-weight: 600; }
   .result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
   .timer { font: 500 20px var(--mono); }
@@ -60,6 +65,7 @@
   .reveal { font-family: var(--mono); margin-top: 6px; }
   .err { color: var(--bad); }
   code { font-family: var(--mono); font-size: 90%; }
+  #vrRandHex { word-break: break-all; }
   footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
   footer code { word-break: break-all; }
 </style>
@@ -140,23 +146,13 @@
   <!-- ================= VERIFY ================= -->
   <section id="tab-verify" hidden>
     <div class="card">
-      <p class="small" style="margin-top:0">Enter a round number to fetch it, or paste the round's JSON (<code>{"round":…,"randomness":…,"signature":…}</code>) to verify offline. The number is recomputed here, in your browser, from the spec.</p>
-      <div class="row" style="margin-top:0">
-        <input type="text" id="vRound" inputmode="numeric" placeholder="round number" style="max-width:220px">
-        <button class="primary" id="vFetchBtn">Fetch &amp; verify</button>
-      </div>
-      <textarea id="vJson" placeholder='paste round JSON here for offline verification'></textarea>
-      <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
-      <label class="small" for="vWhen" style="display:block;margin-top:14px">Or look up the number that was showing at a date and time</label>
-      <div class="row" style="margin-top:4px">
-        <input type="datetime-local" id="vWhen" step="1" style="width:auto;max-width:100%">
-        <select id="vTz" aria-label="time zone" style="font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)">
-          <option value="local">local time</option>
-          <option value="utc">UTC</option>
-        </select>
-        <button class="primary" id="vWhenBtn">Look up</button>
+      <label class="small" for="vQuery" style="display:block">Enter a round number, a 16-digit number, or its 5 words. A number or words are looked up in the archive to find their round; the round's signature is then checked here, in your browser.</label>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits · five words" style="flex:1 1 260px">
+        <button class="primary" id="vFetchBtn">Verify</button>
       </div>
       <div class="err small" id="vErr"></div>
+      <div class="small" id="vArchive" style="margin-top:6px"></div>
     </div>
     <div class="card" id="vCard" hidden>
       <div class="status">
@@ -169,11 +165,36 @@
       <div class="words" id="vrWords"></div>
       <div class="small" id="vLookupMsg"></div>
       <div class="small">randomness <code id="vrRandHex"></code></div>
-      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Check factors against this N</label>
-      <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="one or two factors, digits or words">
+      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Check a factor of this number: one or two factors, as digits or three words each</label>
+      <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
       <div class="row"><button class="primary" id="vCheckBtn">Check</button></div>
       <div class="result" id="vResult"></div>
       <details style="margin-top:10px"><summary>Reveal factors</summary><div class="reveal" id="vReveal"></div></details>
+    </div>
+    <div class="card">
+      <b>Numbers shown in a time range</b>
+      <p class="small" style="margin:4px 0 8px">Every round between two times, newest first. At most 100 rounds (5 minutes) per lookup.</p>
+      <div class="row" style="margin-top:0">
+        <input type="datetime-local" id="vFrom" step="1" aria-label="from">
+        <span class="small">to</span>
+        <input type="datetime-local" id="vTo" step="1" aria-label="to">
+        <select id="vTz" aria-label="time zone">
+          <option value="local">local time</option>
+          <option value="utc">UTC</option>
+        </select>
+        <button class="primary" id="vRangeBtn">Look up</button>
+      </div>
+      <div class="err small" id="vRangeErr"></div>
+      <div class="small" id="vRangeMsg"></div>
+      <ol class="feed" id="vRangeList"></ol>
+    </div>
+    <div class="card">
+      <details>
+        <summary>Verify pasted round JSON offline</summary>
+        <p class="small">Paste a round (<code>{"round":…,"randomness":…,"signature":…}</code>), for example from an exported session, to verify it with no network.</p>
+        <textarea id="vJson" placeholder='round JSON'></textarea>
+        <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
+      </details>
     </div>
   </section>
 
@@ -182,7 +203,7 @@
     <div class="card">
       <h3 style="margin-top:0">What this is</h3>
       <p>A live test of mental factoring. Every 3 seconds the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon publishes a round of randomness that nobody can know in advance; the page turns each round into a 16-digit semiprime <i>N = p·q</i> with two 8-digit prime factors. Because the derivation is deterministic and public, anyone can confirm later that the number shown at a given moment was the only number that could have been shown, and that it could not have existed before that moment.</p>
-      <p>The large number on the Live tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify a round</b> can look up the number that was showing at any date and time since the beacon started (23 August 2023): the time is mapped to its round, which is fetched and verified like any other.</p>
+      <p>The large number on the Live tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify a round</b> checks a round number, a 16-digit number, or its 5 words. A number or words cannot be turned back into a round, so the site keeps an archive: a scheduled job records every new round's number and works backwards through older rounds. The archive only says which round a number came from; the round's signature is always re-checked in your browser. The same tab lists every number shown in a time range (archive first, the drand relays for anything it lacks).</p>
       <h3>Derivation (SPEC.md v1)</h3>
       <ol>
         <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>
@@ -226,7 +247,7 @@
     document.querySelectorAll('nav [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
     ['live', 'verify', 'about'].forEach(t => $('tab-' + t).hidden = (t !== name));
   }
-  document.querySelectorAll('nav [role=tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('nav [role=tab]').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); if (b.dataset.tab === 'verify') loadArchiveStatus(); }));
 
   async function fetchWithTimeout(url, ms) {
     const ctl = new AbortController();
@@ -397,9 +418,38 @@
   });
   $('clearBtn').addEventListener('click', () => { if (confirm('Clear the session log?')) { log = []; renderLog(); } });
 
+  // ---------- archive API (same origin; absent when the page is opened as a file) ----------
+  const API_OK = location.protocol === 'http:' || location.protocol === 'https:';
+  async function apiGet(path) {        // -> parsed JSON; null on 404; throws otherwise
+    if (!API_OK) throw new Error('the archive needs the page to be served from its site');
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(path, { signal: ctl.signal });
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error('archive HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+  let archive = null;                  // last /api/status, or null when unavailable
+  async function loadArchiveStatus() {
+    try {
+      archive = await apiGet('/api/status');
+      $('vArchive').textContent = archive && archive.count
+        ? 'Archive: ' + archive.count.toLocaleString() + ' rounds, from ' + archive.first + ' (' + utc(archive.firstTime) + ' UTC) to ' + archive.last + ' (' + utc(archive.lastTime) + ' UTC). Older rounds are still being added.'
+        : 'Archive: no rounds recorded yet.';
+    } catch (e) {
+      archive = null;
+      $('vArchive').textContent = 'Archive unavailable (' + (e.message || e) + '). Rounds can still be verified by number, and ranges are fetched from the drand relays.';
+    }
+  }
+  function coverage() {
+    return archive && archive.count ? ' The archive covers rounds ' + archive.first + ' to ' + archive.last + ' (' + utc(archive.firstTime) + ' to ' + utc(archive.lastTime) + ' UTC) and is still filling in older rounds.' : '';
+  }
+
   // ---------- verify tab ----------
   let ver = null;
-  function showVerified(b) {
+  function showVerified(b, note) {
     ver = b;
     $('vrRound').textContent = b.round;
     $('vrTime').textContent = utc(b.time);
@@ -408,22 +458,53 @@
     $('vrN').textContent = SP.groupDigits(b.N.toString(), 4);
     renderWords($('vrWords'), SP.encodeN(b.N));
     $('vrRandHex').textContent = b.randomness;
-    $('vLookupMsg').textContent = '';
+    $('vLookupMsg').textContent = note || '';
     $('vResult').textContent = ''; $('vResult').className = 'result';
+    $('vAnswer').value = '';
     const f = SP.deriveFactors(b.randomness);
     $('vReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
     $('vReveal').parentElement.open = false;
     $('vCard').hidden = false; $('vErr').textContent = '';
   }
+  function roundNote(b, how) {
+    return (b.sigOk && b.randOk ? 'Genuine: round ' + b.round + ' was the number showing from ' + utc(b.time) + ' UTC for ' + CHAIN.period + ' s.'
+                                : 'Round ' + b.round + ' failed verification; do not trust this number.') + (how ? ' ' + how : '');
+  }
+  // A query is a round number, a 16-digit N, or 5 words. Returns {round} or {N}; throws with a readable message.
+  function parseQuery(text) {
+    const t = text.trim();
+    if (/^\d{16}$/.test(t)) return { N: BigInt(t) };
+    if (/^\d{1,12}$/.test(t)) { const r = Number(t); if (r < 1) throw new Error('round numbers start at 1'); return { round: r }; }
+    if (/^[a-zA-Z]+(\s+[a-zA-Z]+)*$/.test(t)) {
+      const ws = t.split(/\s+/);
+      if (ws.length !== 5) throw new Error('a number is 5 words (got ' + ws.length + ')');
+      const N = SP.decodeWords(ws);
+      if (N < 10n ** 15n || N >= 10n ** 16n) throw new Error('those words do not encode a 16-digit number');
+      return { N };
+    }
+    throw new Error('enter a round number, a 16-digit number, or its 5 words');
+  }
+  async function verifyByRound(r) {
+    const b = validateBeacon(await fetchRound(r));
+    showVerified(b, roundNote(b, 'Fetched from the drand relays; signature checked in your browser.'));
+  }
+  async function verifyByN(N) {
+    const row = await apiGet('/api/n/' + N);
+    if (!row) throw new Error('this number is not in the archive.' + coverage() + ' If you know the round number or when it was shown, use those instead.');
+    const b = validateBeacon(row);
+    if (b.N !== N) throw new Error('the archive returned round ' + b.round + ', which does not produce this number; refusing to show it');
+    showVerified(b, roundNote(b, 'Found in the archive; signature checked in your browser.'));
+  }
   $('vFetchBtn').addEventListener('click', async () => {
-    const r = Number($('vRound').value.trim());
-    if (!Number.isInteger(r) || r < 1) { $('vErr').textContent = 'enter a positive round number'; return; }
-    $('vErr').textContent = 'fetching…';
-    try { showVerified(validateBeacon(await fetchRound(r))); }
-    catch (e) { $('vErr').textContent = 'could not fetch/verify round ' + r + ': ' + (e.message || e); }
+    let q;
+    try { q = parseQuery($('vQuery').value); } catch (e) { $('vErr').textContent = e.message; return; }
+    $('vErr').textContent = q.round ? 'fetching round ' + q.round + '…' : 'looking up ' + q.N + '…';
+    try { if (q.round) await verifyByRound(q.round); else await verifyByN(q.N); }
+    catch (e) { $('vErr').textContent = (q.round ? 'could not fetch/verify round ' + q.round + ': ' : '') + (e.message || e); }
   });
+  $('vQuery').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
-    try { showVerified(validateBeacon(JSON.parse($('vJson').value))); }
+    try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.')); }
     catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
   $('vCheckBtn').addEventListener('click', () => {
@@ -434,14 +515,21 @@
   });
   $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vCheckBtn').click(); });
 
-  // ---------- lookup by date and time ----------
-  // The round current at unix second t is SP.roundAt(t); it is fetched and verified like any other.
-  (function initLookup() {
+  // ---------- time range ----------
+  // Rounds are listed from the archive, and any it lacks are fetched from the relays. Listed rows are
+  // checked only for randomness = SHA-256(signature); "verify" on a row does the full check above.
+  const RANGE_LIMIT = 100;
+  function localInput(d) {          // Date -> 'YYYY-MM-DDTHH:MM:SS' in local time
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  (function initRange() {
     let tz = '';
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* keep default label */ }
     if (tz) $('vTz').options[0].textContent = tz;
-    const d = new Date(), p = n => String(n).padStart(2, '0');
-    $('vWhen').value = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    const now = new Date();
+    $('vTo').value = localInput(now);
+    $('vFrom').value = localInput(new Date(now.getTime() - 60000));
   })();
   function parseWhen(value, mode) {    // 'YYYY-MM-DDTHH:MM[:SS]' in local time or UTC -> unix seconds, or NaN
     const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value || '');
@@ -450,19 +538,52 @@
     const ms = mode === 'utc' ? Date.UTC(y, mo - 1, d, h, mi, s) : new Date(y, mo - 1, d, h, mi, s).getTime();
     return Math.floor(ms / 1000);
   }
-  $('vWhenBtn').addEventListener('click', async () => {
-    const t = parseWhen($('vWhen').value, $('vTz').value);
-    if (!Number.isFinite(t)) { $('vErr').textContent = 'enter a date and time'; return; }
-    if (t < CHAIN.genesisTime) { $('vErr').textContent = 'quicknet started at ' + utc(CHAIN.genesisTime) + ' UTC; there is no number before that'; return; }
-    const r = SP.roundAt(t);
-    if (SP.roundTime(r) > Date.now() / 1000 + 1) { $('vErr').textContent = 'that time is in the future: round ' + r + ' does not exist yet'; return; }
-    $('vRound').value = r;
-    $('vErr').textContent = 'fetching round ' + r + '…';
-    try {
-      showVerified(validateBeacon(await fetchRound(r)));
-      $('vLookupMsg').textContent = 'Round ' + r + ' was the number showing from ' + utc(SP.roundTime(r)) + ' UTC for ' + CHAIN.period + ' s.';
-    } catch (e) { $('vErr').textContent = 'could not fetch/verify round ' + r + ': ' + (e.message || e); }
+  $('vRangeBtn').addEventListener('click', async () => {
+    const err = $('vRangeErr'), msg = $('vRangeMsg'), list = $('vRangeList');
+    err.textContent = ''; msg.textContent = ''; list.innerHTML = '';
+    const mode = $('vTz').value;
+    const a = parseWhen($('vFrom').value, mode), z = parseWhen($('vTo').value, mode);
+    if (!Number.isFinite(a) || !Number.isFinite(z)) { err.textContent = 'enter both times'; return; }
+    if (z < a) { err.textContent = 'the end of the range is before its start'; return; }
+    if (z < CHAIN.genesisTime) { err.textContent = 'quicknet started at ' + utc(CHAIN.genesisTime) + ' UTC; there are no numbers before that'; return; }
+    const now = Math.floor(Date.now() / 1000);
+    if (a > now) { err.textContent = 'that range is in the future'; return; }
+    const r1 = SP.roundAt(Math.max(a, CHAIN.genesisTime));
+    let r2 = SP.roundAt(Math.min(z, now)), capped = false;
+    if (r2 - r1 + 1 > RANGE_LIMIT) { r2 = r1 + RANGE_LIMIT - 1; capped = true; }
+    err.textContent = 'looking up rounds ' + r1 + ' to ' + r2 + '…';
+    const rows = new Map();
+    let archiveNote = '';
+    try { const res = await apiGet('/api/range?from=' + r1 + '&to=' + r2); for (const row of (res && res.rounds) || []) rows.set(Number(row.round), row); }
+    catch (e) { archiveNote = ' Archive unavailable, so everything was fetched from the relays.'; }
+    const missing = []; for (let r = r1; r <= r2; r++) if (!rows.has(r)) missing.push(r);
+    let failed = 0;
+    await Promise.all(Array.from({ length: Math.min(6, missing.length) }, async (_, lane) => {
+      for (let i = lane; i < missing.length; i += 6) { try { rows.set(missing[i], await fetchRound(missing[i])); } catch (e) { failed++; } }
+    }));
+    const items = [];
+    for (let r = r2; r >= r1; r--) {
+      const when = utc(SP.roundTime(r)).slice(11) + ' UTC';
+      const row = rows.get(r);
+      let N = null;
+      try { if (row && Number(row.round) === r && SP.randomnessMatches(String(row.randomness), String(row.signature))) N = SP.deriveN(String(row.randomness).toLowerCase()); } catch (e) { N = null; }
+      if (N === null) { items.push('<li class="gap">round ' + r + ' · ' + when + ' · unavailable</li>'); continue; }
+      items.push('<li><span class="n">' + SP.groupDigits(N.toString(), 4) + '</span><span class="meta">round ' + r + ' · ' + when + ' · <button class="link" data-verify="' + r + '">verify</button></span><span class="w">' + SP.encodeN(N).join(' ') + '</span></li>');
+    }
+    list.innerHTML = items.join('');
+    err.textContent = failed ? failed + ' round' + (failed > 1 ? 's' : '') + ' could not be fetched' : '';
+    msg.textContent = (r2 - r1 + 1) + ' rounds, ' + utc(SP.roundTime(r1)) + ' to ' + utc(SP.roundTime(r2) + CHAIN.period) + ' UTC' +
+      (capped ? ' (limited to ' + RANGE_LIMIT + ' rounds, ' + (RANGE_LIMIT * CHAIN.period / 60) + ' minutes from the start of the range)' : '') +
+      '. ' + (rows.size - missing.length + failed) + ' from the archive, ' + (missing.length - failed) + ' from the relays.' + archiveNote;
   });
+  $('vRangeList').addEventListener('click', e => {
+    const b = e.target.closest('[data-verify]');
+    if (!b) return;
+    $('vQuery').value = b.dataset.verify;
+    $('vFetchBtn').click();
+    $('vCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  loadArchiveStatus();
 })();
 </script>
 </body>

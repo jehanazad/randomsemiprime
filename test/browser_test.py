@@ -1,7 +1,11 @@
 """End-to-end test of index.html in headless Chromium.
-Serves beacon rounds from test-vectors.json via request interception (so it runs offline and
-deterministically), exercises live ticker, capture, timer, check, reveal, export, and verify tab."""
-import json, os, sys, time
+The page is served over HTTP from the repo root. The archive API (/api/*) is always mocked from
+test-vectors.json. With --offline the drand relays are mocked too (real vectors for their rounds,
+self-consistent synthetic rounds otherwise), so the run is deterministic and needs no network.
+Exercises live ticker, feed, update, capture, timer, check, reveal, export, and the verify tab."""
+import json, os, sys, time, hashlib, threading
+from functools import partial
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -12,6 +16,19 @@ LATEST = VEC['rounds'][-1]            # round 33470004 -> N 3307786713929837, p 
 FIRST = ROUNDS[20000000]              # served as 'latest' once, so the feed can advance
 OFFLINE = '--offline' in sys.argv
 GENESIS, PERIOD = 1692803367, 3
+def round_time(r): return GENESIS + (r - 1) * PERIOD
+N_OF = {1: '8766449459018651', 20000000: '2842566290086427', 33470004: '3307786713929837'}
+
+def fake_round(r):
+    """A synthetic round with randomness = SHA-256(signature); never passes BLS, fine for listings."""
+    sig = hashlib.sha256(b'sig-%d' % r).digest() + hashlib.sha256(b'sig2-%d' % r).digest()[:16]
+    return {'round': r, 'randomness': hashlib.sha256(sig).hexdigest(), 'signature': sig.hex()}
+
+class Quiet(SimpleHTTPRequestHandler):
+    def log_message(self, *a): pass
+httpd = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=ROOT))
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+BASE = 'http://127.0.0.1:%d' % httpd.server_address[1]
 
 fails = []
 def check(cond, msg):
@@ -25,7 +42,8 @@ with sync_playwright() as p:
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
-    page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+    # an expected 404 from an archive miss (/api/n/...) is logged by Chrome as a resource error; ignore it
+    page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and not ('404' in m.text and '/api/n/' in (m.location or {}).get('url', '')) else None)
 
     hits = {'n': 0}
     def handle(route, request):
@@ -36,13 +54,32 @@ with sync_playwright() as p:
             body = FIRST if hits['n'] == 1 else LATEST
         elif which.isdigit() and int(which) in ROUNDS:
             body = ROUNDS[int(which)]
+        elif which.isdigit() and int(which) >= 1:
+            body = fake_round(int(which))
         else:
             return route.fulfill(status=404, body='not found')
         route.fulfill(status=200, content_type='application/json', body=json.dumps(body))
     if OFFLINE:
         page.route('**/public/**', handle)
 
-    page.goto('file://' + os.path.join(ROOT, 'index.html'))
+    # archive API mock: the archive holds exactly the three test-vector rounds
+    def handle_api(route, request):
+        path = request.url.split('/api/', 1)[1]
+        def js(body, status=200): route.fulfill(status=status, content_type='application/json', body=json.dumps(body))
+        if path == 'status':
+            return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004)})
+        if path.startswith('n/'):
+            for r, n in N_OF.items():
+                if n == path[2:]: return js(ROUNDS[r])
+            return js({'error': 'not in archive'}, 404)
+        if path.startswith('range?'):
+            q = dict(kv.split('=') for kv in path[6:].split('&'))
+            a, b = int(q['from']), int(q['to'])
+            return js({'from': a, 'to': b, 'rounds': [ROUNDS[r] for r in sorted(ROUNDS, reverse=True) if a <= r <= b]})
+        return js({'error': 'not found'}, 404)
+    page.route('**/api/**', handle_api)
+
+    page.goto(BASE + '/index.html')
     page.wait_for_function("document.getElementById('captureBtn').disabled === false", timeout=20000)
     check(page.inner_text('#liveSig') == 'signature verified', 'live round shows verified signature')
     live_round = page.inner_text('#liveRound')
@@ -114,45 +151,94 @@ with sync_playwright() as p:
     page.click('#releaseBtn')
     check(page.is_visible('#liveCard') and page.is_visible('#feedCard') and not page.is_visible('#capCard'), 'back to live')
 
-    # verify tab: fetch round 1
+    # verify tab: by round number
     page.click('nav [data-tab=verify]')
-    page.fill('#vRound', '1'); page.click('#vFetchBtn')
+    page.wait_for_function("document.getElementById('vArchive').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
+    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#vArchive'), 'archive coverage is shown')
+    page.fill('#vQuery', '1'); page.press('#vQuery', 'Enter')
     page.wait_for_function("!document.getElementById('vCard').hidden", timeout=15000)
-    check(page.inner_text('#vrN').replace(' ', '') == '8766449459018651', 'verify tab recomputes round 1 N from spec')
+    check(page.inner_text('#vrN').replace(' ', '') == '8766449459018651', 'verify by round number recomputes round 1 N from spec')
     check(page.inner_text('#vrSig') == 'BLS signature valid', 'verify tab: signature valid')
+    check(page.inner_text('#vLookupMsg').startswith('Genuine: round 1 was the number showing from 2023-08-23 15:09:27 UTC for 3 s.'), 'round note names the time window')
     page.fill('#vAnswer', '90234649'); page.press('#vAnswer', 'Enter')
-    check(page.inner_text('#vResult').startswith('Correct'), 'verify tab checker works')
+    check(page.inner_text('#vResult').startswith('Correct'), 'factor check on a verified round works')
+    page.fill('#vAnswer', 'expose angry similar'); page.press('#vAnswer', 'Enter')
+    check(page.inner_text('#vResult').startswith('Wrong'), 'wrong word factor rejected (and a word containing x is one word: ' + page.inner_text('#vResult') + ')')
+    page.fill('#vAnswer', '90234649x97151699'); page.press('#vAnswer', 'Enter')
+    check(page.inner_text('#vResult').startswith('Correct'), 'x between digits still separates factors')
+
+    # by 16-digit number and by 5 words, through the archive
+    def verify_query(q):
+        page.evaluate("document.getElementById('vLookupMsg').textContent = ''; document.getElementById('vErr').textContent = ''")
+        page.fill('#vQuery', q); page.click('#vFetchBtn')
+        page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0 || (document.getElementById('vErr').textContent.length > 0 && !document.getElementById('vErr').textContent.includes('…'))", timeout=15000)
+        return page.inner_text('#vLookupMsg'), page.inner_text('#vErr')
+    msg, err = verify_query('2842566290086427')
+    check(msg.startswith('Genuine: round 20000000 was the number showing from 2025-07-18 01:49:24 UTC') and 'archive' in msg, f'16-digit number is traced to its round via the archive ({msg or err})')
+    check(page.inner_text('#vrN').replace(' ', '') == '2842566290086427' and page.inner_text('#vrSig') == 'BLS signature valid', 'archive row is re-verified in the browser')
+    check(page.inner_text('#vAnswer') == '' and page.inner_text('#vResult') == '', 'factor check is reset for the new number')
+    page.fill('#vAnswer', '66752887 42583421'); page.press('#vAnswer', 'Enter')
+    check(page.inner_text('#vResult').startswith('Correct'), 'both factors accepted for the traced number')
+    msg, err = verify_query('before network eager tiny drop')
+    check(msg.startswith('Genuine: round 20000000'), f'five words are traced to the same round ({msg or err})')
+    msg, err = verify_query('Before NETWORK eage tiny drop')
+    check(msg.startswith('Genuine: round 20000000'), f'words are case-insensitive and accept 4-letter prefixes ({msg or err})')
+    msg, err = verify_query('1234567890123457')
+    check(err.startswith('this number is not in the archive.') and 'covers rounds 1 to 33470004' in err, f'unknown number explains archive coverage ({err})')
+    msg, err = verify_query('before network eager tiny')
+    check('5 words' in err, 'four words are rejected')
+    msg, err = verify_query('hello world foo bar baz')
+    check('unknown word' in err, 'non-wordlist words are rejected')
+    msg, err = verify_query('12x34')
+    check(err.startswith('enter a round number'), 'garbage is rejected')
+
     # offline JSON with tampered signature
+    page.locator('#tab-verify details').last.locator('summary').click()
     bad = dict(ROUNDS[1]); bad['signature'] = ROUNDS[20000000]['signature']
     page.fill('#vJson', json.dumps(bad)); page.click('#vJsonBtn')
     check(page.inner_text('#vrSig') == 'BLS signature INVALID', 'tampered signature flagged INVALID')
     check(page.inner_text('#vrRand') == 'randomness MISMATCH', 'randomness mismatch flagged')
+    check(page.inner_text('#vLookupMsg').startswith('Round 1 failed verification'), 'note says not to trust a failed round')
     page.fill('#vJson', json.dumps(ROUNDS[20000000])); page.click('#vJsonBtn')
     check(page.inner_text('#vrN').replace(' ', '') == '2842566290086427', 'pasted JSON for round 20000000 verifies and derives N')
 
-    # lookup by date and time (UTC): one second into round 20000000
-    t = GENESIS + (20000000 - 1) * PERIOD + 1
-    when = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(t))
-    page.click('nav [data-tab=verify]')
+    # time range: rounds 19999999..20000002 around a vector round (UTC)
+    t = round_time(20000000)
+    utcs = lambda u: time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(u))
+    def lookup_range(a, b):
+        page.evaluate("document.getElementById('vRangeMsg').textContent = ''")
+        page.fill('#vFrom', a); page.fill('#vTo', b); page.click('#vRangeBtn')
+        page.wait_for_function("document.getElementById('vRangeMsg').textContent.length > 0 || (document.getElementById('vRangeErr').textContent.length > 0 && !document.getElementById('vRangeErr').textContent.includes('…'))", timeout=60000)
+        return page.inner_text('#vRangeMsg'), page.inner_text('#vRangeErr')
     page.select_option('#vTz', 'utc')
-    page.fill('#vWhen', when); page.click('#vWhenBtn')
+    msg, err = lookup_range(utcs(t - 3), utcs(t + 8))
+    rows = page.locator('#vRangeList li')
+    check(rows.count() == 4 and 'round 20000002' in rows.nth(0).inner_text() and 'round 19999999' in rows.nth(3).inner_text(), f'range lists 4 rounds newest first ({msg} / {err})')
+    check(msg.startswith('4 rounds, 2025-07-18 01:49:21 to 2025-07-18 01:49:33 UTC. 1 from the archive, 3 from the relays.'), f'range message counts sources ({msg})')
+    vec_row = page.locator('#vRangeList li', has_text='round 20000000')
+    check(vec_row.locator('.n').inner_text().replace(' ', '') == '2842566290086427' and vec_row.locator('.w').inner_text() == 'before network eager tiny drop', 'archive round shows its number and words')
+    check(len(rows.nth(0).locator('.n').inner_text().replace(' ', '')) == 16, 'relay-fetched round shows a 16-digit number')
+    page.evaluate("document.getElementById('vLookupMsg').textContent = ''")
+    vec_row.locator('[data-verify]').click()
     page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0", timeout=15000)
-    check(page.input_value('#vRound') == '20000000' and page.inner_text('#vrN').replace(' ', '') == '2842566290086427', 'lookup resolves the date and time to round 20000000')
-    msg = page.inner_text('#vLookupMsg')
-    check(msg.startswith('Round 20000000 was the number showing from ' + time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(t - 1))), f'lookup explains which seconds the round covered ({msg})')
-    check(page.inner_text('#vrSig') == 'BLS signature valid', 'looked-up round is verified')
-    # local-time mode must agree with UTC mode once the browser's offset is applied
+    check(page.inner_text('#vLookupMsg').startswith('Genuine: round 20000000') and page.input_value('#vQuery') == '20000000', 'verify button on a row verifies that round')
+    # local time must agree once the browser's offset is applied
     offset = page.evaluate('new Date(%d).getTimezoneOffset() * 60' % (t * 1000))
     check(offset != 0, f'browser runs in a non-UTC zone (offset {offset} s)')
-    page.evaluate("document.getElementById('vRound').value = ''; document.getElementById('vLookupMsg').textContent = ''")
     page.select_option('#vTz', 'local')
-    page.fill('#vWhen', time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(t - offset))); page.click('#vWhenBtn')
-    page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0", timeout=15000)
-    check(page.input_value('#vRound') == '20000000' and page.inner_text('#vrN').replace(' ', '') == '2842566290086427', 'lookup in local time resolves to the same round')
-    page.fill('#vWhen', '2099-01-01T12:34:56'); page.click('#vWhenBtn')
-    check('future' in page.inner_text('#vErr'), 'future time is refused')
-    page.fill('#vWhen', '2020-01-01T12:34:56'); page.click('#vWhenBtn')
-    check('quicknet started' in page.inner_text('#vErr'), 'time before genesis is refused')
+    msg, err = lookup_range(utcs(t - 3 - offset), utcs(t + 8 - offset))
+    check(page.locator('#vRangeList li').count() == 4 and msg.startswith('4 rounds, 2025-07-18 01:49:21'), f'local-time range resolves to the same rounds ({msg})')
+    page.select_option('#vTz', 'utc')
+    # cap at 100 rounds
+    msg, err = lookup_range(utcs(t), utcs(t + 3600))
+    check(page.locator('#vRangeList li').count() == 100 and 'limited to 100 rounds, 5 minutes' in msg, f'hour-long range is capped at 100 rounds ({msg[:120]})')
+    # bad ranges
+    msg, err = lookup_range(utcs(t + 8), utcs(t))
+    check('before its start' in err, 'reversed range is refused')
+    msg, err = lookup_range('2099-01-01T12:34:56', '2099-01-02T12:34:56')
+    check('future' in err, 'future range is refused')
+    msg, err = lookup_range('2020-01-01T12:34:56', '2020-01-02T12:34:56')
+    check('quicknet started' in err, 'range before genesis is refused')
 
     # dark mode render + screenshots
     page.screenshot(path=os.path.join(HERE, 'shot-verify.png'))

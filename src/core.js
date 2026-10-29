@@ -163,9 +163,10 @@
 
   // ---- Answer parsing / checking (SPEC.md §5) ----
   // Input: free text. Digits-only tokens are decimal factors. Word tokens are grouped in threes.
+  // Separators: whitespace , ; × * and an x between digits (never inside a word such as "expose").
   // Returns {factors: BigInt[]} or throws with a readable message.
   function parseAnswer(text) {
-    const tokens = text.trim().split(/[\s,;×x*]+/).filter(Boolean);
+    const tokens = text.trim().replace(/(\d)\s*x\s*(\d)/gi, '$1 $2').split(/[\s,;×*]+/).filter(Boolean);
     if (!tokens.length) throw new Error('enter one or two factors');
     const factors = [];
     let wordBuf = [];

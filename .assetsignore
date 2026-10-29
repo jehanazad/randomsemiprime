@@ -13,3 +13,5 @@ wrangler.jsonc
 *.py
 *.json
 __pycache__
+worker
+*.sql
