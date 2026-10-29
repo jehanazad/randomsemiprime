@@ -77,9 +77,9 @@
   </header>
 
   <nav role="tablist">
-    <button role="tab" aria-selected="true" data-tab="live">Live</button>
-    <button role="tab" aria-selected="false" data-tab="verify">Verify a round</button>
-    <button role="tab" aria-selected="false" data-tab="about">How it works</button>
+    <button role="tab" aria-selected="false" data-tab="about">How it Works</button>
+    <button role="tab" aria-selected="true" data-tab="live">Generate</button>
+    <button role="tab" aria-selected="false" data-tab="verify">Verify</button>
   </nav>
 
   <!-- ================= LIVE ================= -->
@@ -197,7 +197,7 @@
     <div class="card">
       <h3 style="margin-top:0">What this is</h3>
       <p>A live test of mental factoring. Every 3 seconds the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon publishes a round of randomness that nobody can know in advance; the page turns each round into a 16-digit semiprime <i>N = p·q</i> with two 8-digit prime factors. Because the derivation is deterministic and public, anyone can confirm later that the number shown at a given moment was the only number that could have been shown, and that it could not have existed before that moment.</p>
-      <p>The large number on the Live tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify a round</b> checks a round number, a 16-digit number, or its 5 words. A number or words cannot be turned back into a round, so the site keeps an archive: a scheduled job records every new round's number and works backwards through older rounds. The archive only says which round a number came from; the round's signature is always re-checked in your browser. The same tab lists every number shown in a time range (archive first, the drand relays for anything it lacks).</p>
+      <p>The large number on the Generate tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify</b> checks a round number, a 16-digit number, or its 5 words. A number or words cannot be turned back into a round, so the site keeps an archive: a scheduled job records every new round's number and works backwards through older rounds. The archive only says which round a number came from; the round's signature is always re-checked in your browser. The same tab lists every number shown in a time range (archive first, the drand relays for anything it lacks).</p>
       <h3>Derivation (SPEC.md v1)</h3>
       <ol>
         <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>

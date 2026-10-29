@@ -96,6 +96,9 @@ with sync_playwright() as p:
     page.route('**/api/**', handle_api)
 
     page.goto(BASE + '/index.html')
+    tabs = [b.inner_text() for b in page.locator('nav [role=tab]').all()]
+    check(tabs == ['How it Works', 'Generate', 'Verify'], f'tabs are in order ({tabs})')
+    check(page.get_attribute('nav [data-tab=live]', 'aria-selected') == 'true' and page.is_visible('#tab-live') and not page.is_visible('#tab-about'), 'Generate is the landing tab')
     page.wait_for_function("document.getElementById('captureBtn').disabled === false", timeout=20000)
     check(page.inner_text('#liveSig') == 'signature verified', 'live round shows verified signature')
     live_round = page.inner_text('#liveRound')

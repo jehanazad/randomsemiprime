@@ -16,7 +16,7 @@ network access to a drand relay (`api.drand.sh`, `api2.drand.sh`, `api3.drand.sh
 archive (`/api/*`, see below), which exists only on the deployed site; everything else runs in
 the browser.
 
-1. **Live** shows the number from the round that was current when you arrived, as 16 digits and
+1. **Generate** shows the number from the round that was current when you arrived, as 16 digits and
    as 5 words. It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
    **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
    number with the newest round. Press **Capture** to freeze the shown number and start the clock.
@@ -24,7 +24,7 @@ the browser.
    the result and time in the session log. The page never shows the factors.
 3. **Export JSON** (or **Copy JSON** where downloads are blocked) saves a transcript containing
    each round's signature, so a third party can verify everything offline.
-4. **Verify a round** takes a round number, a 16-digit number (spaces between digit groups are
+4. **Verify** takes a round number, a 16-digit number (spaces between digit groups are
    fine), or its 5 words. A round number is
    fetched from drand; a number or words are looked up in the archive to find their round. Either
    way the round's BLS signature is checked in the browser, the number is re-derived, and the
