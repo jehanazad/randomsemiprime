@@ -117,6 +117,17 @@ with sync_playwright() as p:
     page.click('#updateBtn')
     check(page.inner_text('#liveN').replace(' ', '') == newest_n and page.inner_text('#liveRound') == str(feed_rounds[0]), 'update focuses the newest round')
     check(page.inner_text('#updateBtn') == 'Up to date', 'update button idle again')
+    check(page.inner_text('#liveWordsNote') == '(encoded as BIP39 big-endian)', 'words carry the BIP39 big-endian note')
+
+    # clicking an older round in the feed focuses it; Update then offers the newer rounds again
+    older_n = page.inner_text('#feedList li:nth-child(2) .n').replace(' ', '')
+    older_round = page.get_attribute('#feedList li:nth-child(2)', 'data-round')
+    page.click('#feedList li:nth-child(2) .n')
+    check(page.inner_text('#liveN').replace(' ', '') == older_n and page.inner_text('#liveRound') == older_round, 'clicking a feed round focuses it')
+    check(page.locator('#feedList li.focused').count() == 1 and page.get_attribute('#feedList li.focused', 'data-round') == older_round, 'clicked round is marked in the feed')
+    check(page.inner_text('#updateBtn').startswith('Update (') and not page.is_disabled('#updateBtn'), 'update offers newer rounds after focusing an older one')
+    page.click('#updateBtn')
+    check(page.inner_text('#liveN').replace(' ', '') == newest_n, 'update returns to the newest round')
     if OFFLINE:
         check(newest_n == '3307786713929837', 'newest N matches test vector')
     live_round = page.inner_text('#liveRound')

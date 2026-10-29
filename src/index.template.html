@@ -47,6 +47,8 @@
   textarea { font-family: var(--mono); font-size: 13px; min-height: 90px; }
   .feed { list-style: none; margin: 8px 0 0; padding: 0; }
   .feed li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .feed li { cursor: pointer; }
+  .feed li:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .feed li.focused { color: var(--accent); }
   .feed .n { font: 500 17px var(--mono); letter-spacing: .03em; }
   .feed .meta { font-size: 13px; color: var(--muted); }
@@ -86,6 +88,7 @@
     <div class="card" id="liveCard">
       <div class="N" id="liveN" style="margin-top:4px">— — — —</div>
       <div class="words" id="liveWords"></div>
+      <div class="small" id="liveWordsNote" style="margin:-6px 0 10px">(encoded as BIP39 big-endian)</div>
       <div class="status">
         <span>round <b id="liveRound">—</b></span>
         <span><b id="liveTime">—</b> UTC</span>
@@ -268,7 +271,7 @@
   }
   function renderFeed() {
     $('feedList').innerHTML = feed.map(b =>
-      '<li' + (focused && b.round === focused.round ? ' class="focused"' : '') + '>' +
+      '<li data-round="' + b.round + '" title="Show this round"' + (focused && b.round === focused.round ? ' class="focused"' : '') + '>' +
       '<span class="n">' + SP.groupDigits(b.N.toString(), 4) + '</span>' +
       '<span class="meta">round ' + b.round + ' · ' + utc(b.time).slice(11) + ' UTC</span>' +
       '<span class="w">' + SP.encodeN(b.N).join(' ') + '</span></li>').join('');
@@ -297,6 +300,13 @@
     }
   }
   $('updateBtn').addEventListener('click', () => { if (latest) { focused = latest; renderFocused(); } });
+  // Clicking a round in the feed makes it the focused round.
+  $('feedList').addEventListener('click', e => {
+    const li = e.target.closest('li[data-round]');
+    if (!li) return;
+    const b = feed.find(x => String(x.round) === li.dataset.round);
+    if (b && (!focused || b.round !== focused.round)) { focused = b; renderFocused(); }
+  });
   // Align polling to the beacon period: fire ~400 ms after each expected round boundary.
   function schedule() {
     const now = Date.now();
