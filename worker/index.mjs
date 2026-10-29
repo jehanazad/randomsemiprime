@@ -1,4 +1,5 @@
 // Cloudflare Worker: serves index.html as a static asset and keeps an archive of rounds in D1.
+// Requests on the old domain (randomsemiprime.com) are redirected permanently to primetotem.com.
 //
 //   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error}}
 //   GET /api/n/<16 digits>     -> {n, rounds: [{round, n, randomness, signature}, ...]} newest first, or 404
@@ -17,6 +18,16 @@ globalThis.__noble = { sha256 };
 const SP = globalThis.SP;
 const CHAIN = SP.CHAIN;
 const RANGE_LIMIT = 100;
+const CANONICAL_HOST = 'primetotem.com';
+const OLD_HOSTS = ['randomsemiprime.com', 'www.randomsemiprime.com', 'www.primetotem.com'];
+
+// Where a request should be redirected, or null if it is already on the canonical host.
+export function redirectTarget(url) {
+  const u = new URL(url);
+  if (!OLD_HOSTS.includes(u.hostname.toLowerCase())) return null;
+  u.hostname = CANONICAL_HOST; u.protocol = 'https:'; u.port = '';
+  return u.toString();
+}
 const FETCH_TIMEOUT_MS = 5000;
 const PARALLEL = 10;
 const TICK_DEADLINE_MS = 40000;     // stop starting fetches after this, so runs do not pile up
@@ -162,6 +173,8 @@ async function api(url, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const to = redirectTarget(url);
+    if (to) return Response.redirect(to, 301);
     if (url.pathname.startsWith('/api/')) {
       if (request.method !== 'GET') return json({ error: 'GET only' }, 405);
       try { return await api(url, env); }

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { rowFromBeacon, archiveTick } from '../worker/index.mjs';
+import { rowFromBeacon, archiveTick, redirectTarget } from '../worker/index.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -24,6 +24,12 @@ try { rowFromBeacon({ ...VEC.rounds[0], signature: VEC.rounds[1].signature }, 1)
 catch (e) { check(/randomness/.test(e.message), 'tampered signature rejected: ' + e.message); }
 try { rowFromBeacon(VEC.rounds[0], 2); check(false, 'wrong round rejected'); }
 catch (e) { check(/round/.test(e.message), 'wrong round rejected'); }
+
+// ---- unit: old-domain redirect ----
+check(redirectTarget('https://randomsemiprime.com/') === 'https://primetotem.com/', 'old apex redirects to primetotem.com');
+check(redirectTarget('http://www.randomsemiprime.com/api/status?x=1') === 'https://primetotem.com/api/status?x=1', 'old www keeps path and query');
+check(redirectTarget('https://www.primetotem.com/') === 'https://primetotem.com/', 'www.primetotem.com redirects to the apex');
+check(redirectTarget('https://primetotem.com/') === null && redirectTarget('http://127.0.0.1:8787/') === null, 'canonical host and local dev are not redirected');
 
 // ---- mock relay: real vectors for their rounds, synthetic but self-consistent rounds otherwise ----
 const failing = new Set();
@@ -149,7 +155,9 @@ try {
   check((await get('/api/nope')).status === 404, 'unknown api path is 404');
   check((await fetch(base + '/api/status', { method: 'POST' })).status === 405, 'POST is 405');
   const page = await fetch(base + '/');
-  check(page.ok && /<title>Random Semiprime<\/title>/.test(await page.text()), 'index.html is served at /');
+  check(page.ok && /<title>Prime Totem<\/title>/.test(await page.text()), 'index.html is served at /');
+  // (the old-domain redirect cannot be exercised here: wrangler dev rewrites the request URL to its own
+  //  origin whatever the Host header says; redirectTarget is unit-tested above instead)
   check((await fetch(base + '/worker/index.mjs')).status === 404, 'worker source is not served as an asset');
   check((await fetch(base + '/schema.sql')).status === 404, 'schema.sql is not served as an asset');
 } catch (e) { check(false, 'integration: ' + (e.message || e)); }

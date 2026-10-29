@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Random Semiprime</title>
+<title>Prime Totem</title>
 <link rel="icon" href="data:,">
 <meta name="description" content="Fresh 16-digit semiprimes derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
 <style>
@@ -71,7 +71,7 @@
 <body>
 <main>
   <header>
-    <h1>Random Semiprime</h1>
+    <h1>Prime Totem Generator</h1>
     <div class="status" id="beaconStatus"><span class="pill">connecting…</span></div>
   </header>
 
@@ -164,22 +164,27 @@
   <!-- ================= ABOUT ================= -->
   <section id="tab-about" hidden>
     <div class="card">
-      <h3 style="margin-top:0">What this is</h3>
-      <p>A live test of mental factoring. Every 3 seconds the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon publishes a round of randomness that nobody can know in advance; the page turns each round into a 16-digit semiprime <i>N = p·q</i> with two 8-digit prime factors. Because the derivation is deterministic and public, anyone can confirm later that the number shown at a given moment was the only number that could have been shown, and that it could not have existed before that moment.</p>
-      <p>The large number on the Generate tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify</b> checks a round number, a 16-digit number, or its 5 words. A number or words cannot be turned back into a round, so the site keeps an archive: a scheduled job records every new round's number and works backwards through older rounds. The archive only says which round a number came from; the round's signature is always re-checked in your browser. The same tab lists every number shown in a time range (archive first, the drand relays for anything it lacks).</p>
-      <h3>Derivation (SPEC.md v1)</h3>
+      <h3 style="margin-top:0">What a prime totem is for</h3>
+      <p>A prime totem is a 16-digit number that is the product of exactly two 8-digit primes: a balanced semiprime. Finding those two primes by hand means searching among millions of candidates, and no human has ever been recorded doing it unaided. The generator exists to test whether an entity has that superhuman ability: show it a fresh totem, have it name a factor, and check the answer on the spot.</p>
+      <p>The test is only meaningful if the entity could not have known the number in advance. So every totem comes from the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon, a public source of randomness that publishes a new signed round every 3 seconds and that nobody, this site included, can predict or steer. Each round is turned into one totem by a fixed, public rule, so the number showing at any moment was the only number that could have shown, and it did not exist before that moment.</p>
+      <h3>How to run a test</h3>
+      <ol>
+        <li>Open <b>Generate</b>. The large number is the round that was current when the page loaded; it stays until you press <b>Update</b>, and the round line below it shows when it was published. Newer rounds keep arriving in the list below, newest first.</li>
+        <li>Give the entity the number, as digits or as its 5 words. Record the round number and the time.</li>
+        <li>On <b>Verify</b>, enter the round number, the 16 digits, or the 5 words. The round is fetched and its signature checked in your browser; then enter the entity's answer, one factor or both, as digits or three words each. The page checks by division and never displays the factors.</li>
+      </ol>
+      <h3>What it does and doesn't prove</h3>
+      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester, and verifiable by anyone later from the round's signature. It does not stop a device from factoring a 16-digit number instantly, so the entity must have no device and no confederate. The factors are public in principle, since anyone with the round number and the rule can compute them; the page simply never shows them.</p>
+      <h3>The rule (SPEC.md v1)</h3>
       <ol>
         <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>
         <li>For tag <code>"p"</code>, then <code>"q"</code>: compute <code>SHA-256(randomness ‖ tag ‖ ctr)</code> with a one-byte counter starting at 0; take the first 4 bytes as a big-endian integer <i>x</i>; reject and increment the counter if <i>x</i> ≥ 4 239 387 826; otherwise the candidate is <code>31622777 + (x mod 68377223)</code>.</li>
         <li>The factor is the smallest prime ≥ candidate (primality by trial division to 10⁴, which is exact below 10⁸). Reject if it reaches 10⁸ or, for <i>q</i>, equals <i>p</i>.</li>
         <li><i>N = p·q</i>. The lower bound ⌈√10·10⁷⌉ guarantees exactly 16 digits.</li>
       </ol>
-      <h3>Words</h3>
       <p><i>N</i> is also shown as 5 words from the BIP39 English list (11 bits each, big-endian). A factor is 3 words. Typing a factor as words or digits is equivalent. The first 4 letters of a word are enough.</p>
-      <h3>What it does and doesn't prove</h3>
-      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester. It does not stop a device from factoring a 16-digit number instantly, so the test is only meaningful if the person being tested has no device and no confederate. The factors are never shown; the page only checks an answer against the number. Anyone with the round number and the spec can compute them, so this is a courtesy against casual snooping, not a secret.</p>
       <h3>Verify independently</h3>
-      <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>.</p>
+      <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>. A number or its words can be traced back to their round through this site's archive, which only names the round; the signature is always re-checked in your browser.</p>
       <p class="small" id="archiveStatus"></p>
     </div>
   </section>

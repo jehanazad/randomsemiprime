@@ -1,8 +1,8 @@
-# Random Semiprime
+# Prime Totem
 
 A fresh 16-digit semiprime every 3 seconds, derived deterministically from the
 [drand](https://drand.love) quicknet randomness beacon, for live tests of mental factoring.
-Live at [randomsemiprime.com](https://randomsemiprime.com).
+Live at [primetotem.com](https://primetotem.com) (randomsemiprime.com redirects there).
 
 Because each number is a fixed function of a signed, timestamped beacon round that nobody
 can predict, the number shown at any moment could not have been known in advance, and
@@ -108,7 +108,8 @@ npm run dev                       # local site + archive at http://localhost:878
 ## Deploy
 
 `wrangler.jsonc` deploys `index.html` as a static asset plus the archive Worker, with the D1
-binding, the cron trigger, and the custom domains, to `randomsemiprime.com`. Cloudflare's Git
+binding, the cron trigger, and the custom domains, to `primetotem.com`; the Worker redirects
+`randomsemiprime.com` and the `www` hosts to it. Cloudflare's Git
 integration (Workers Builds) deploys on every push to the production branch; by hand:
 
 ```
