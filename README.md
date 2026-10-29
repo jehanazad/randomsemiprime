@@ -19,18 +19,14 @@ the browser.
 1. **Generate** shows the number from the round that was current when you arrived, as 16 digits and
    as 5 words. It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
    **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
-   number with the newest round. Press **Capture** to freeze the shown number and start the clock.
-2. Enter the answer: one or two factors, as 8-digit numbers or 3 words each. **Check** records
-   the result and time in the session log. The page never shows the factors.
-3. **Export JSON** (or **Copy JSON** where downloads are blocked) saves a transcript containing
-   each round's signature, so a third party can verify everything offline.
-4. **Verify** takes a round number, a 16-digit number (spaces between digit groups are
+   number with the newest round.
+2. **Verify** takes a round number, a 16-digit number (spaces between digit groups are
    fine), or its 5 words. A round number is
    fetched from drand; a number or words are looked up in the archive to find their round. Either
    way the round's BLS signature is checked in the browser, the number is re-derived, and the
    result says which 3-second window the number was showing in. A factor can then be checked
-   against it, as digits or words.
-5. **Numbers shown in a time range** lists every round between two times (local time or UTC),
+   against it, as digits or words. The page never shows the factors.
+3. **Numbers shown in a time range** lists every round between two times (local time or UTC),
    newest first, at most 100 rounds (5 minutes) per lookup: archive rows first, and anything the
    archive lacks fetched from drand. Each row has a **verify** button that runs the full check.
    Pasted round JSON can still be verified offline.

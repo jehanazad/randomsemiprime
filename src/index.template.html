@@ -57,7 +57,6 @@
   select { font: inherit; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
   .result { margin-top: 8px; font-weight: 600; }
   .result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
-  .timer { font: 500 20px var(--mono); }
   table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
   th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
   td.mono { font-family: var(--mono); font-size: 13px; }
@@ -90,14 +89,13 @@
       <div class="status">
         <span>round <b id="liveRound">—</b></span>
         <span><b id="liveTime">—</b> UTC</span>
+        <span id="liveSig" class="pill" style="margin-left:auto">drand sig …</span>
       </div>
       <div class="row">
-        <button class="primary" id="captureBtn" disabled>Capture this number</button>
-        <button class="secondary" id="updateBtn" disabled>Update</button>
-        <span class="small">This number stays until you press Update. Capture freezes it and starts the clock.</span>
+        <button class="primary" id="updateBtn" disabled>Update</button>
+        <span class="small">This number stays until you press Update.</span>
       </div>
       <div class="err small" id="liveErr"></div>
-      <div style="display:flex; justify-content:flex-end; margin-top:8px"><span id="liveSig" class="pill">drand sig …</span></div>
     </div>
 
     <div class="card" id="feedCard">
@@ -108,34 +106,6 @@
       <ol class="feed" id="feedList"></ol>
     </div>
 
-    <div class="card" id="capCard" hidden>
-      <div class="status">
-        <span>captured round <b id="capRound"></b></span>
-        <span><b id="capTime"></b> UTC</span>
-        <span class="pill ok">signature verified</span>
-        <span class="timer" id="capTimer">0.0 s</span>
-      </div>
-      <div class="N" id="capN"></div>
-      <div class="words" id="capWords"></div>
-      <label class="small" for="answer">Answer — one or two factors, as digits or three words each</label>
-      <input type="text" id="answer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
-      <div class="row">
-        <button class="primary" id="checkBtn">Check</button>
-        <button class="secondary" id="stopBtn">Stop clock</button>
-        <button class="secondary" id="releaseBtn">Back to live</button>
-      </div>
-      <div class="result" id="capResult"></div>
-    </div>
-
-    <div class="card" id="logCard" hidden>
-      <div class="row" style="margin-top:0; justify-content: space-between">
-        <b>Session log</b>
-        <span><button class="secondary" id="exportBtn">Export JSON</button> <button class="secondary" id="copyBtn">Copy JSON</button> <button class="secondary" id="clearBtn">Clear</button></span>
-      </div>
-      <textarea id="exportBox" hidden readonly aria-label="session JSON"></textarea>
-      <div class="small" id="copyMsg"></div>
-      <table id="logTable"><thead><tr><th>#</th><th>Round</th><th>UTC</th><th>N</th><th>Answer</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table>
-    </div>
   </section>
 
   <!-- ================= VERIFY ================= -->
@@ -175,7 +145,7 @@
           <option value="local">local time</option>
           <option value="utc">UTC</option>
         </select>
-        <button class="primary" id="vRangeBtn">Look up</button>
+        <button class="primary" id="vRangeBtn" style="margin-left:auto">Look up</button>
       </div>
       <div class="err small" id="vRangeErr"></div>
       <div class="small" id="vRangeMsg"></div>
@@ -283,7 +253,6 @@
     setPill($('liveSig'), 'ok', 'drand sig ✓');
     $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
     renderWords($('liveWords'), SP.encodeN(b.N));
-    $('captureBtn').disabled = false;
     renderUpdateBtn();
     renderFeed();
   }
@@ -319,7 +288,7 @@
       $('liveErr').textContent = 'Beacon unavailable: ' + (e.message || e) + (liveErrCount > 1 ? ' (' + liveErrCount + ' failures)' : '');
       setPill(document.querySelector('#beaconStatus .pill'), 'bad', 'beacon unreachable');
       // A focused round was already verified, so it stays readable and capturable.
-      if (!focused) { setPill($('liveSig'), 'bad', 'drand sig ✗'); $('captureBtn').disabled = true; }
+      if (!focused) setPill($('liveSig'), 'bad', 'drand sig ✗');
     }
   }
   $('updateBtn').addEventListener('click', () => { if (latest) { focused = latest; renderFocused(); } });
@@ -332,79 +301,12 @@
   }
   tick().then(schedule);
 
-  // ---------- capture / answer ----------
-  let cap = null, timerId = null, log = [];
-  function fmtElapsed(ms) { return (ms / 1000).toFixed(1) + ' s'; }
-  function startTimer() {
-    stopTimer();
-    timerId = setInterval(() => { if (cap && !cap.stoppedAt) $('capTimer').textContent = fmtElapsed(Date.now() - cap.startedAt); }, 100);
-  }
-  function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; }
-
-  $('captureBtn').addEventListener('click', () => {
-    if (!focused) return;
-    cap = { ...focused, startedAt: Date.now(), stoppedAt: null };
-    $('capRound').textContent = cap.round;
-    $('capTime').textContent = utc(cap.time);
-    $('capN').textContent = SP.groupDigits(cap.N.toString(), 4);
-    renderWords($('capWords'), SP.encodeN(cap.N));
-    $('capResult').textContent = ''; $('capResult').className = 'result';
-    $('answer').value = '';
-    $('capCard').hidden = false; $('liveCard').hidden = true; $('feedCard').hidden = true;
-    $('capTimer').textContent = '0.0 s';
-    startTimer();
-    $('answer').focus();
-  });
-
+  // ---------- answer checking (used by the Verify tab) ----------
   function doCheck(N, text) {
     const parsed = SP.parseAnswer(text);           // throws on malformed input
     const res = SP.checkAnswer(N, parsed.factors);
     return { factors: parsed.factors, ...res };
   }
-
-  $('checkBtn').addEventListener('click', () => {
-    if (!cap) return;
-    const out = $('capResult');
-    let r;
-    try { r = doCheck(cap.N, $('answer').value); }
-    catch (e) { out.className = 'result bad'; out.textContent = e.message; return; }
-    const elapsed = (cap.stoppedAt || Date.now()) - cap.startedAt;
-    if (r.ok && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); }
-    out.className = 'result ' + (r.ok ? 'ok' : 'bad');
-    out.textContent = r.ok ? 'Correct — ' + r.factors.join(' × ') + (r.factors.length === 1 ? ' divides N' : ' = N') + ' (' + fmtElapsed(cap.stoppedAt - cap.startedAt) + ')'
-                           : 'Wrong — ' + r.reason;
-    log.push({ round: cap.round, time: cap.time, N: cap.N.toString(), answer: $('answer').value.trim(),
-               factors: r.factors.map(String), correct: r.ok, elapsedMs: elapsed, at: new Date().toISOString(),
-               beacon: { round: cap.round, randomness: cap.randomness, signature: cap.signature } });
-    renderLog();
-  });
-  $('answer').addEventListener('keydown', e => { if (e.key === 'Enter') $('checkBtn').click(); });
-  $('stopBtn').addEventListener('click', () => { if (cap && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); } });
-  $('releaseBtn').addEventListener('click', () => { stopTimer(); cap = null; $('capCard').hidden = true; $('liveCard').hidden = false; $('feedCard').hidden = false; });
-
-  function renderLog() {
-    $('logCard').hidden = log.length === 0;
-    const tb = $('logTable').querySelector('tbody');
-    tb.innerHTML = log.map((e, i) =>
-      '<tr><td>' + (i + 1) + '</td><td>' + e.round + '</td><td class="mono">' + utc(e.time) + '</td><td class="mono">' + e.N + '</td><td class="mono">' + esc(e.answer) + '</td><td style="color:' + (e.correct ? 'var(--ok)' : 'var(--bad)') + '">' + (e.correct ? 'correct' : 'wrong') + '</td><td>' + fmtElapsed(e.elapsedMs) + '</td></tr>').join('');
-  }
-  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-  function sessionJSON() {
-    return JSON.stringify({ spec: 'beacon-semiprime v1', chain: CHAIN.hash, exportedAt: new Date().toISOString(), entries: log }, null, 2);
-  }
-  $('copyBtn').addEventListener('click', async () => {
-    const text = sessionJSON();
-    $('exportBox').value = text; $('exportBox').hidden = false;
-    try { await navigator.clipboard.writeText(text); $('copyMsg').textContent = 'Copied to clipboard.'; }
-    catch (e) { $('exportBox').select(); $('copyMsg').textContent = 'Clipboard unavailable — select the text above and copy it.'; }
-  });
-  $('exportBtn').addEventListener('click', () => {
-    const blob = new Blob([sessionJSON()], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'semiprime-session-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
-  $('clearBtn').addEventListener('click', () => { if (confirm('Clear the session log?')) { log = []; renderLog(); } });
 
   // ---------- archive API (same origin; absent when the page is opened as a file) ----------
   const API_OK = location.protocol === 'http:' || location.protocol === 'https:';

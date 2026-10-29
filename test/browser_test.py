@@ -2,7 +2,7 @@
 The page is served over HTTP from the repo root. The archive API (/api/*) is always mocked from
 test-vectors.json. With --offline the drand relays are mocked too (real vectors for their rounds,
 self-consistent synthetic rounds otherwise), so the run is deterministic and needs no network.
-Exercises live ticker, feed, update, capture, timer, check, export, and the verify tab."""
+Exercises live ticker, feed, update, and the verify tab (lookup, check, range)."""
 import json, os, sys, time, hashlib, threading
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -24,18 +24,6 @@ def fake_round(r):
     sig = hashlib.sha256(b'sig-%d' % r).digest() + hashlib.sha256(b'sig2-%d' % r).digest()[:16]
     return {'round': r, 'randomness': hashlib.sha256(sig).hexdigest(), 'signature': sig.hex()}
 
-FACTORS = {1: ('90234649', '97151699'), 20000000: ('66752887', '42583421'), 33470004: ('47795929', '69206453')}
-def factors_of(r):
-    """(p, q, p as words) for a round: from the vectors, else derived in the page from the relay's randomness."""
-    if r in FACTORS:
-        p, q = FACTORS[r]
-        return p, q, page.evaluate('SP.encodeFactor(%sn).join(" ")' % p)
-    return page.evaluate('''async (r) => {
-        const j = await (await fetch(SP.CHAIN.relays[0] + '/' + SP.CHAIN.hash + '/public/' + r)).json();
-        const f = SP.deriveFactors(j.randomness);
-        return [f.p.toString(), f.q.toString(), SP.encodeFactor(f.p).join(' ')];
-    }''', r)
-
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 httpd = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=ROOT))
@@ -50,7 +38,7 @@ def check(cond, msg):
 with sync_playwright() as p:
     browser = p.chromium.launch()
     # A non-UTC zone so the local-time branch of the lookup is really exercised.
-    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, accept_downloads=True, timezone_id='America/New_York')
+    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, timezone_id='America/New_York')
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -99,7 +87,7 @@ with sync_playwright() as p:
     tabs = [b.inner_text() for b in page.locator('nav [role=tab]').all()]
     check(tabs == ['How it Works', 'Generate', 'Verify'], f'tabs are in order ({tabs})')
     check(page.get_attribute('nav [data-tab=live]', 'aria-selected') == 'true' and page.is_visible('#tab-live') and not page.is_visible('#tab-about'), 'Generate is the landing tab')
-    page.wait_for_function("document.getElementById('captureBtn').disabled === false", timeout=20000)
+    page.wait_for_function("document.getElementById('liveSig').textContent === 'drand sig ✓'", timeout=20000)
     check(page.inner_text('#liveSig') == 'drand sig ✓', 'live round shows the drand signature tag')
     live_round = page.inner_text('#liveRound')
     live_n = page.inner_text('#liveN').replace(' ', '')
@@ -109,6 +97,13 @@ with sync_playwright() as p:
         check(live_round == str(FIRST['round']), 'first round shown matches mocked latest')
         check(live_n == '2842566290086427', 'first N matches test vector')
     check(page.inner_text('#updateBtn') == 'Up to date' and page.is_disabled('#updateBtn'), 'update button idle when nothing newer')
+    check('primary' in page.get_attribute('#updateBtn', 'class') and not page.locator('#captureBtn').count(), 'update is the primary button and capture is gone')
+    # at desktop width the tag shares the round/time line and hugs the right edge; at phone width the line wraps
+    page.set_viewport_size({'width': 760, 'height': 900})
+    inline = page.evaluate('''() => { const s = document.querySelector('#liveCard .status').getBoundingClientRect(), p = document.getElementById('liveSig').getBoundingClientRect();
+        return p.top >= s.top - 1 && p.bottom <= s.bottom + 1 && s.height < 40 && s.right - p.right < 2; }''')
+    check(inline, 'drand sig tag sits inline at the right end of the round/time line')
+    page.set_viewport_size({'width': 420, 'height': 900})
     check(page.locator('#feedList li').count() == 1, 'feed starts with the first round')
 
     # the focused number stays while newer rounds join the feed; Update moves to the newest
@@ -126,42 +121,6 @@ with sync_playwright() as p:
         check(newest_n == '3307786713929837', 'newest N matches test vector')
     live_round = page.inner_text('#liveRound')
     live_n = page.inner_text('#liveN').replace(' ', '')
-
-    # capture
-    page.click('#captureBtn')
-    check(not page.is_visible('#liveCard') and not page.is_visible('#feedCard') and page.is_visible('#capCard'), 'capture shows captured card')
-    cap_n = page.inner_text('#capN').replace(' ', '')
-    check(cap_n == live_n, 'captured N equals live N')
-    check('×' not in page.inner_text('#capCard'), 'no factors displayed on the captured card')
-    time.sleep(0.6)
-    check(float(page.inner_text('#capTimer').split()[0]) >= 0.5, 'timer is running')
-
-    # wrong answer, then correct answer (digits), then words
-    page.fill('#answer', '12345678'); page.press('#answer', 'Enter')
-    check(page.inner_text('#capResult').startswith('Wrong'), 'wrong digit factor rejected')
-    pstr, qstr, pw = factors_of(int(page.inner_text('#capRound')))
-    check(int(pstr) * int(qstr) == int(cap_n), 'test-side factors multiply to the captured N')
-    page.fill('#answer', pstr); page.press('#answer', 'Enter')
-    check(page.inner_text('#capResult').startswith('Correct'), 'correct digit factor accepted')
-    t1 = page.inner_text('#capTimer'); time.sleep(0.4); t2 = page.inner_text('#capTimer')
-    check(t1 == t2, 'timer stops on first correct answer')
-    page.fill('#answer', pw); page.press('#answer', 'Enter')
-    check(page.inner_text('#capResult').startswith('Correct'), 'correct word factor accepted')
-    page.fill('#answer', f'{pstr} x {qstr}'); page.press('#answer', 'Enter')
-    check(page.inner_text('#capResult').startswith('Correct'), 'two factors accepted')
-    rows = page.locator('#logTable tbody tr').count()
-    check(rows == 4, f'session log has 4 entries ({rows})')
-
-    # export
-    with page.expect_download() as dl:
-        page.click('#exportBtn')
-    path = dl.value.path()
-    exp = json.load(open(path))
-    check(len(exp['entries']) == 4 and exp['entries'][1]['correct'] and 'signature' in exp['entries'][0]['beacon'], 'export JSON has entries with beacon data')
-
-    # back to live
-    page.click('#releaseBtn')
-    check(page.is_visible('#liveCard') and page.is_visible('#feedCard') and not page.is_visible('#capCard'), 'back to live')
 
     # verify tab: by round number
     page.click('nav [data-tab=about]')
