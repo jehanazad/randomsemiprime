@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Beacon Semiprime</title>
+<title>Random Semiprime</title>
 <link rel="icon" href="data:,">
 <meta name="description" content="Fresh 16-digit semiprimes derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
 <style>
@@ -62,7 +62,6 @@
   th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
   td.mono { font-family: var(--mono); font-size: 13px; }
   details summary { cursor: pointer; color: var(--muted); }
-  .reveal { font-family: var(--mono); margin-top: 6px; }
   .err { color: var(--bad); }
   code { font-family: var(--mono); font-size: 90%; }
   #vrRandHex { word-break: break-all; }
@@ -73,7 +72,7 @@
 <body>
 <main>
   <header>
-    <h1>Beacon Semiprime</h1>
+    <h1>Random Semiprime</h1>
     <div class="status" id="beaconStatus"><span class="pill">connecting…</span></div>
   </header>
 
@@ -118,7 +117,7 @@
       </div>
       <div class="N" id="capN"></div>
       <div class="words" id="capWords"></div>
-      <label class="small" for="answer">Savant's answer — one or two factors, as digits or three words each</label>
+      <label class="small" for="answer">Answer — one or two factors, as digits or three words each</label>
       <input type="text" id="answer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
       <div class="row">
         <button class="primary" id="checkBtn">Check</button>
@@ -126,10 +125,6 @@
         <button class="secondary" id="releaseBtn">Back to live</button>
       </div>
       <div class="result" id="capResult"></div>
-      <details id="revealBox" style="margin-top:10px">
-        <summary>Reveal factors (recomputed on demand; nothing is stored)</summary>
-        <div class="reveal" id="capReveal"></div>
-      </details>
     </div>
 
     <div class="card" id="logCard" hidden>
@@ -148,7 +143,7 @@
     <div class="card">
       <label class="small" for="vQuery" style="display:block">Enter a round number, a 16-digit number, or its 5 words. A number or words are looked up in the archive to find their round; the round's signature is then checked here, in your browser.</label>
       <div class="row" style="margin-top:6px">
-        <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits · five words" style="flex:1 1 260px">
+        <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits (spaces allowed) · five words" style="flex:1 1 260px">
         <button class="primary" id="vFetchBtn">Verify</button>
       </div>
       <div class="err small" id="vErr"></div>
@@ -169,7 +164,6 @@
       <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
       <div class="row"><button class="primary" id="vCheckBtn">Check</button></div>
       <div class="result" id="vResult"></div>
-      <details style="margin-top:10px"><summary>Reveal factors</summary><div class="reveal" id="vReveal"></div></details>
     </div>
     <div class="card">
       <b>Numbers shown in a time range</b>
@@ -214,7 +208,7 @@
       <h3>Words</h3>
       <p><i>N</i> is also shown as 5 words from the BIP39 English list (11 bits each, big-endian). A factor is 3 words. Typing a factor as words or digits is equivalent. The first 4 letters of a word are enough.</p>
       <h3>What it does and doesn't prove</h3>
-      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester. It does not stop a device from factoring a 16-digit number instantly, so the test is only meaningful if the person being tested has no device and no confederate. Factors are never written to the page until you tap "Reveal"; they are recomputed from public data, so this is a courtesy against casual snooping, not a secret.</p>
+      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester. It does not stop a device from factoring a 16-digit number instantly, so the test is only meaningful if the person being tested has no device and no confederate. The factors are never shown; the page only checks an answer against the number. Anyone with the round number and the spec can compute them, so this is a courtesy against casual snooping, not a secret.</p>
       <h3>Verify independently</h3>
       <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>.</p>
     </div>
@@ -355,7 +349,6 @@
     $('capN').textContent = SP.groupDigits(cap.N.toString(), 4);
     renderWords($('capWords'), SP.encodeN(cap.N));
     $('capResult').textContent = ''; $('capResult').className = 'result';
-    $('capReveal').textContent = ''; $('revealBox').open = false;
     $('answer').value = '';
     $('capCard').hidden = false; $('liveCard').hidden = true; $('feedCard').hidden = true;
     $('capTimer').textContent = '0.0 s';
@@ -388,11 +381,6 @@
   $('answer').addEventListener('keydown', e => { if (e.key === 'Enter') $('checkBtn').click(); });
   $('stopBtn').addEventListener('click', () => { if (cap && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); } });
   $('releaseBtn').addEventListener('click', () => { stopTimer(); cap = null; $('capCard').hidden = true; $('liveCard').hidden = false; $('feedCard').hidden = false; });
-  $('revealBox').addEventListener('toggle', () => {
-    if (!cap || !$('revealBox').open) { $('capReveal').textContent = ''; return; }
-    const f = SP.deriveFactors(cap.randomness);
-    $('capReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
-  });
 
   function renderLog() {
     $('logCard').hidden = log.length === 0;
@@ -466,9 +454,6 @@
     $('vLookupMsg').textContent = note || '';
     $('vResult').textContent = ''; $('vResult').className = 'result';
     $('vAnswer').value = '';
-    const f = SP.deriveFactors(b.randomness);
-    $('vReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
-    $('vReveal').parentElement.open = false;
     $('vCard').hidden = false; $('vErr').textContent = '';
   }
   function roundNote(b, how) {
@@ -477,7 +462,8 @@
   }
   // A query is a round number, a 16-digit N, or 5 words. Returns {round} or {N}; throws with a readable message.
   function parseQuery(text) {
-    const t = text.trim();
+    let t = text.trim();
+    if (/^[\d\s]+$/.test(t)) t = t.replace(/\s+/g, '');     // digits may be grouped, e.g. "3307 7867 1392 9837"
     if (/^\d{16}$/.test(t)) return { N: BigInt(t) };
     if (/^\d{1,12}$/.test(t)) { const r = Number(t); if (r < 1) throw new Error('round numbers start at 1'); return { round: r }; }
     if (/^[a-zA-Z]+(\s+[a-zA-Z]+)*$/.test(t)) {

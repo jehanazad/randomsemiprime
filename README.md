@@ -1,4 +1,4 @@
-# beacon-semiprime
+# Random Semiprime
 
 A fresh 16-digit semiprime every 3 seconds, derived deterministically from the
 [drand](https://drand.love) quicknet randomness beacon, for live tests of mental factoring.
@@ -21,10 +21,11 @@ the browser.
    **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
    number with the newest round. Press **Capture** to freeze the shown number and start the clock.
 2. Enter the answer: one or two factors, as 8-digit numbers or 3 words each. **Check** records
-   the result and time in the session log. **Reveal** recomputes the factors on demand.
+   the result and time in the session log. The page never shows the factors.
 3. **Export JSON** (or **Copy JSON** where downloads are blocked) saves a transcript containing
    each round's signature, so a third party can verify everything offline.
-4. **Verify a round** takes a round number, a 16-digit number, or its 5 words. A round number is
+4. **Verify a round** takes a round number, a 16-digit number (spaces between digit groups are
+   fine), or its 5 words. A round number is
    fetched from drand; a number or words are looked up in the archive to find their round. Either
    way the round's BLS signature is checked in the browser, the number is re-derived, and the
    result says which 3-second window the number was showing in. A factor can then be checked
@@ -131,8 +132,8 @@ and the page says the archive is unavailable.
   the spec can compute them in milliseconds. This tool proves freshness; it does not prevent
   cheating with a hidden device. The test is only meaningful if the person being tested has
   no device and no confederate.
-- Factors are not written into the page until Reveal is pressed. That is a courtesy against
-  shoulder-surfing, not a secret.
+- The page never displays the factors; it only checks answers. That is a courtesy against
+  shoulder-surfing, not a secret: anyone with the round number and the spec can compute them.
 
 ## License
 

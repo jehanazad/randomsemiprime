@@ -149,7 +149,7 @@ try {
   check((await get('/api/nope')).status === 404, 'unknown api path is 404');
   check((await fetch(base + '/api/status', { method: 'POST' })).status === 405, 'POST is 405');
   const page = await fetch(base + '/');
-  check(page.ok && /Beacon Semiprime/.test(await page.text()), 'index.html is served at /');
+  check(page.ok && /<title>Random Semiprime<\/title>/.test(await page.text()), 'index.html is served at /');
   check((await fetch(base + '/worker/index.mjs')).status === 404, 'worker source is not served as an asset');
   check((await fetch(base + '/schema.sql')).status === 404, 'schema.sql is not served as an asset');
 } catch (e) { check(false, 'integration: ' + (e.message || e)); }

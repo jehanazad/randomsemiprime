@@ -2,7 +2,7 @@
 The page is served over HTTP from the repo root. The archive API (/api/*) is always mocked from
 test-vectors.json. With --offline the drand relays are mocked too (real vectors for their rounds,
 self-consistent synthetic rounds otherwise), so the run is deterministic and needs no network.
-Exercises live ticker, feed, update, capture, timer, check, reveal, export, and the verify tab."""
+Exercises live ticker, feed, update, capture, timer, check, export, and the verify tab."""
 import json, os, sys, time, hashlib, threading
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -23,6 +23,18 @@ def fake_round(r):
     """A synthetic round with randomness = SHA-256(signature); never passes BLS, fine for listings."""
     sig = hashlib.sha256(b'sig-%d' % r).digest() + hashlib.sha256(b'sig2-%d' % r).digest()[:16]
     return {'round': r, 'randomness': hashlib.sha256(sig).hexdigest(), 'signature': sig.hex()}
+
+FACTORS = {1: ('90234649', '97151699'), 20000000: ('66752887', '42583421'), 33470004: ('47795929', '69206453')}
+def factors_of(r):
+    """(p, q, p as words) for a round: from the vectors, else derived in the page from the relay's randomness."""
+    if r in FACTORS:
+        p, q = FACTORS[r]
+        return p, q, page.evaluate('SP.encodeFactor(%sn).join(" ")' % p)
+    return page.evaluate('''async (r) => {
+        const j = await (await fetch(SP.CHAIN.relays[0] + '/' + SP.CHAIN.hash + '/public/' + r)).json();
+        const f = SP.deriveFactors(j.randomness);
+        return [f.p.toString(), f.q.toString(), SP.encodeFactor(f.p).join(' ')];
+    }''', r)
 
 class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -117,22 +129,15 @@ with sync_playwright() as p:
     check(not page.is_visible('#liveCard') and not page.is_visible('#feedCard') and page.is_visible('#capCard'), 'capture shows captured card')
     cap_n = page.inner_text('#capN').replace(' ', '')
     check(cap_n == live_n, 'captured N equals live N')
-    check('Reveal' in page.inner_text('#revealBox summary'), 'reveal is collapsed by default')
-    check(page.inner_text('#capReveal').strip() == '', 'factors not in DOM before reveal')
+    check('×' not in page.inner_text('#capCard'), 'no factors displayed on the captured card')
     time.sleep(0.6)
     check(float(page.inner_text('#capTimer').split()[0]) >= 0.5, 'timer is running')
 
     # wrong answer, then correct answer (digits), then words
     page.fill('#answer', '12345678'); page.press('#answer', 'Enter')
     check(page.inner_text('#capResult').startswith('Wrong'), 'wrong digit factor rejected')
-    # get the factors the way a tester would: through reveal
-    page.click('#revealBox summary')
-    page.wait_for_function("document.getElementById('capReveal').textContent.length > 0", timeout=3000)
-    reveal = page.inner_text('#capReveal')
-    check('×' in reveal, 'reveal shows p × q')
-    pstr = reveal.split()[0]; qstr = reveal.split('×')[1].split()[0]
-    pw = reveal.split('(')[1].split(')')[0]
-    check(int(pstr) * int(qstr) == int(cap_n), 'revealed factors multiply to N')
+    pstr, qstr, pw = factors_of(int(page.inner_text('#capRound')))
+    check(int(pstr) * int(qstr) == int(cap_n), 'test-side factors multiply to the captured N')
     page.fill('#answer', pstr); page.press('#answer', 'Enter')
     check(page.inner_text('#capResult').startswith('Correct'), 'correct digit factor accepted')
     t1 = page.inner_text('#capTimer'); time.sleep(0.4); t2 = page.inner_text('#capTimer')
@@ -183,6 +188,10 @@ with sync_playwright() as p:
     check(page.input_value('#vAnswer') == '' and page.inner_text('#vResult') == '', 'factor check is reset for the new number')
     page.fill('#vAnswer', '66752887 42583421'); page.press('#vAnswer', 'Enter')
     check(page.inner_text('#vResult').startswith('Correct'), 'both factors accepted for the traced number')
+    msg, err = verify_query('2842 5662 9008 6427')
+    check(msg.startswith('Genuine: round 20000000'), f'16 digits in groups of 4 are accepted ({msg or err})')
+    msg, err = verify_query('  28425 66290 086427 ')
+    check(msg.startswith('Genuine: round 20000000'), f'other groupings are accepted too ({msg or err})')
     msg, err = verify_query('before network eager tiny drop')
     check(msg.startswith('Genuine: round 20000000'), f'five words are traced to the same round ({msg or err})')
     msg, err = verify_query('Before NETWORK eage tiny drop')
