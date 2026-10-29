@@ -13,13 +13,17 @@ Open `index.html` — from a web server, GitHub Pages, or directly as a file. It
 network access to a drand relay (`api.drand.sh`, `api2.drand.sh`, `api3.drand.sh`,
 `drand.cloudflare.com`) for the live ticker; everything else runs in the browser.
 
-1. **Live** shows the current round's number as 16 digits and as 5 words. Press **Capture** to
-   freeze it and start the clock.
+1. **Live** shows the number from the round that was current when you arrived, as 16 digits and
+   as 5 words. It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
+   **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
+   number with the newest round. Press **Capture** to freeze the shown number and start the clock.
 2. Enter the answer: one or two factors, as 8-digit numbers or 3 words each. **Check** records
    the result and time in the session log. **Reveal** recomputes the factors on demand.
 3. **Export JSON** (or **Copy JSON** where downloads are blocked) saves a transcript containing
    each round's signature, so a third party can verify everything offline.
 4. **Verify a round** re-derives any round by number, or from pasted round JSON with no network.
+   It can also **look up** the number that was showing at a given date and time (local time or
+   UTC): the time is mapped to its quicknet round, which is then fetched and verified.
 
 ## Verify independently
 
@@ -61,6 +65,12 @@ node build.mjs                    # → index.html
 npm test                          # JS vs Python derivation must be identical
 python3 test/browser_test.py --offline
 ```
+
+## Deploy
+
+The site is the single file `index.html`; there is no server. On Cloudflare Pages connect this
+repository with build command `node build.mjs` and build output directory `/` (root), or skip
+the build and serve the committed `index.html` as a static asset. Any static host works.
 
 ## Trust model
 

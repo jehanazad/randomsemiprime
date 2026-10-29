@@ -44,6 +44,12 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
   input[type=text], textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
   textarea { font-family: var(--mono); font-size: 13px; min-height: 90px; }
+  .feed { list-style: none; margin: 8px 0 0; padding: 0; }
+  .feed li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .feed li.focused { color: var(--accent); }
+  .feed .n { font: 500 17px var(--mono); letter-spacing: .03em; }
+  .feed .meta { font-size: 13px; color: var(--muted); }
+  .feed .w { font-size: 14px; flex-basis: 100%; }
   .result { margin-top: 8px; font-weight: 600; }
   .result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
   .timer { font: 500 20px var(--mono); }
@@ -83,9 +89,18 @@
       <div class="words" id="liveWords"></div>
       <div class="row">
         <button class="primary" id="captureBtn" disabled>Capture this number</button>
-        <span class="small">A new number arrives every 3 s. Capture freezes one and starts the clock.</span>
+        <button class="secondary" id="updateBtn" disabled>Update</button>
+        <span class="small">This number stays until you press Update. Capture freezes it and starts the clock.</span>
       </div>
       <div class="err small" id="liveErr"></div>
+    </div>
+
+    <div class="card" id="feedCard">
+      <div class="row" style="margin-top:0; justify-content: space-between">
+        <b>Recent rounds</b>
+        <span class="small">newest first, one every 3 s · <span id="feedCount">0</span> shown</span>
+      </div>
+      <ol class="feed" id="feedList"></ol>
     </div>
 
     <div class="card" id="capCard" hidden>
@@ -132,6 +147,15 @@
       </div>
       <textarea id="vJson" placeholder='paste round JSON here for offline verification'></textarea>
       <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
+      <label class="small" for="vWhen" style="display:block;margin-top:14px">Or look up the number that was showing at a date and time</label>
+      <div class="row" style="margin-top:4px">
+        <input type="datetime-local" id="vWhen" step="1" style="width:auto;max-width:100%">
+        <select id="vTz" aria-label="time zone" style="font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)">
+          <option value="local">local time</option>
+          <option value="utc">UTC</option>
+        </select>
+        <button class="primary" id="vWhenBtn">Look up</button>
+      </div>
       <div class="err small" id="vErr"></div>
     </div>
     <div class="card" id="vCard" hidden>
@@ -143,6 +167,7 @@
       </div>
       <div class="N" id="vrN"></div>
       <div class="words" id="vrWords"></div>
+      <div class="small" id="vLookupMsg"></div>
       <div class="small">randomness <code id="vrRandHex"></code></div>
       <label class="small" for="vAnswer" style="display:block;margin-top:10px">Check factors against this N</label>
       <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="one or two factors, digits or words">
@@ -157,6 +182,7 @@
     <div class="card">
       <h3 style="margin-top:0">What this is</h3>
       <p>A live test of mental factoring. Every 3 seconds the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon publishes a round of randomness that nobody can know in advance; the page turns each round into a 16-digit semiprime <i>N = p·q</i> with two 8-digit prime factors. Because the derivation is deterministic and public, anyone can confirm later that the number shown at a given moment was the only number that could have been shown, and that it could not have existed before that moment.</p>
+      <p>The large number on the Live tab is the round that was current when the page loaded, and it stays until you press <b>Update</b>, so it can be read calmly. New rounds keep arriving in the <b>Recent rounds</b> list below it, newest first. <b>Verify a round</b> can look up the number that was showing at any date and time since the beacon started (23 August 2023): the time is mapped to its round, which is fetched and verified like any other.</p>
       <h3>Derivation (SPEC.md v1)</h3>
       <ol>
         <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>
@@ -229,32 +255,59 @@
   }
 
   // ---------- live ticker ----------
-  let live = null;           // last validated beacon shown
+  // `latest` is the newest validated round seen. `focused` is the one shown large: the first
+  // round to arrive stays focused so it can be read at leisure; Update moves focus to `latest`.
+  // Every new round is also prepended to `feed` (newest first, capped at FEED_MAX).
+  let latest = null, focused = null;
+  const feed = [], FEED_MAX = 200;
   let liveErrCount = 0;
+  function renderFocused() {
+    const b = focused;
+    $('liveRound').textContent = b.round;
+    $('liveTime').textContent = utc(b.time);
+    setPill($('liveSig'), 'ok', 'signature verified');
+    $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
+    renderWords($('liveWords'), SP.encodeN(b.N));
+    $('captureBtn').disabled = false;
+    renderUpdateBtn();
+    renderFeed();
+  }
+  function renderUpdateBtn() {
+    const behind = (latest && focused) ? latest.round - focused.round : 0;
+    $('updateBtn').disabled = behind <= 0;
+    $('updateBtn').textContent = behind > 0 ? 'Update (' + behind + ' newer)' : 'Up to date';
+  }
+  function renderFeed() {
+    $('feedList').innerHTML = feed.map(b =>
+      '<li' + (focused && b.round === focused.round ? ' class="focused"' : '') + '>' +
+      '<span class="n">' + SP.groupDigits(b.N.toString(), 4) + '</span>' +
+      '<span class="meta">round ' + b.round + ' · ' + utc(b.time).slice(11) + ' UTC</span>' +
+      '<span class="w">' + SP.encodeN(b.N).join(' ') + '</span></li>').join('');
+    $('feedCount').textContent = feed.length;
+  }
   async function tick() {
     try {
       const b = validateBeacon(await fetchRound('latest'));
       if (!b.sigOk || !b.randOk) throw new Error('beacon failed verification (sig ' + b.sigOk + ', randomness ' + b.randOk + ')');
-      if (live && b.round < live.round) return;        // a lagging relay; keep the newer one
-      live = b; liveErrCount = 0;
-      $('liveRound').textContent = b.round;
-      $('liveTime').textContent = utc(b.time);
-      setPill($('liveSig'), 'ok', 'signature verified');
-      $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
-      renderWords($('liveWords'), SP.encodeN(b.N));
+      liveErrCount = 0;
       $('liveErr').textContent = '';
-      $('captureBtn').disabled = false;
-      const age = Date.now() / 1000 - b.time;
+      if (!latest || b.round > latest.round) {      // ignore repeats and lagging relays
+        latest = b;
+        feed.unshift(b);
+        if (feed.length > FEED_MAX) feed.length = FEED_MAX;
+        if (!focused) { focused = b; renderFocused(); } else { renderFeed(); renderUpdateBtn(); }
+      }
+      const age = Date.now() / 1000 - latest.time;
       setPill(document.querySelector('#beaconStatus .pill'), age > 15 ? 'warn' : 'ok', age > 15 ? 'beacon stale (' + Math.round(age) + ' s)' : 'quicknet live');
     } catch (e) {
       liveErrCount++;
       $('liveErr').textContent = 'Beacon unavailable: ' + (e.message || e) + (liveErrCount > 1 ? ' (' + liveErrCount + ' failures)' : '');
       setPill(document.querySelector('#beaconStatus .pill'), 'bad', 'beacon unreachable');
-      setPill($('liveSig'), 'bad', 'no verified round');
-      $('captureBtn').disabled = true;
-      $('liveN').textContent = '— — — —'; $('liveWords').textContent = ''; live = null;
+      // A focused round was already verified, so it stays readable and capturable.
+      if (!focused) { setPill($('liveSig'), 'bad', 'no verified round'); $('captureBtn').disabled = true; }
     }
   }
+  $('updateBtn').addEventListener('click', () => { if (latest) { focused = latest; renderFocused(); } });
   // Align polling to the beacon period: fire ~400 ms after each expected round boundary.
   function schedule() {
     const now = Date.now();
@@ -274,8 +327,8 @@
   function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; }
 
   $('captureBtn').addEventListener('click', () => {
-    if (!live) return;
-    cap = { ...live, startedAt: Date.now(), stoppedAt: null };
+    if (!focused) return;
+    cap = { ...focused, startedAt: Date.now(), stoppedAt: null };
     $('capRound').textContent = cap.round;
     $('capTime').textContent = utc(cap.time);
     $('capN').textContent = SP.groupDigits(cap.N.toString(), 4);
@@ -283,7 +336,7 @@
     $('capResult').textContent = ''; $('capResult').className = 'result';
     $('capReveal').textContent = ''; $('revealBox').open = false;
     $('answer').value = '';
-    $('capCard').hidden = false; $('liveCard').hidden = true;
+    $('capCard').hidden = false; $('liveCard').hidden = true; $('feedCard').hidden = true;
     $('capTimer').textContent = '0.0 s';
     startTimer();
     $('answer').focus();
@@ -313,7 +366,7 @@
   });
   $('answer').addEventListener('keydown', e => { if (e.key === 'Enter') $('checkBtn').click(); });
   $('stopBtn').addEventListener('click', () => { if (cap && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); } });
-  $('releaseBtn').addEventListener('click', () => { stopTimer(); cap = null; $('capCard').hidden = true; $('liveCard').hidden = false; });
+  $('releaseBtn').addEventListener('click', () => { stopTimer(); cap = null; $('capCard').hidden = true; $('liveCard').hidden = false; $('feedCard').hidden = false; });
   $('revealBox').addEventListener('toggle', () => {
     if (!cap || !$('revealBox').open) { $('capReveal').textContent = ''; return; }
     const f = SP.deriveFactors(cap.randomness);
@@ -355,6 +408,7 @@
     $('vrN').textContent = SP.groupDigits(b.N.toString(), 4);
     renderWords($('vrWords'), SP.encodeN(b.N));
     $('vrRandHex').textContent = b.randomness;
+    $('vLookupMsg').textContent = '';
     $('vResult').textContent = ''; $('vResult').className = 'result';
     const f = SP.deriveFactors(b.randomness);
     $('vReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
@@ -379,6 +433,36 @@
     catch (e) { out.className = 'result bad'; out.textContent = e.message; }
   });
   $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vCheckBtn').click(); });
+
+  // ---------- lookup by date and time ----------
+  // The round current at unix second t is SP.roundAt(t); it is fetched and verified like any other.
+  (function initLookup() {
+    let tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* keep default label */ }
+    if (tz) $('vTz').options[0].textContent = tz;
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    $('vWhen').value = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  })();
+  function parseWhen(value, mode) {    // 'YYYY-MM-DDTHH:MM[:SS]' in local time or UTC -> unix seconds, or NaN
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value || '');
+    if (!m) return NaN;
+    const [y, mo, d, h, mi, s] = m.slice(1).map(x => Number(x || 0));
+    const ms = mode === 'utc' ? Date.UTC(y, mo - 1, d, h, mi, s) : new Date(y, mo - 1, d, h, mi, s).getTime();
+    return Math.floor(ms / 1000);
+  }
+  $('vWhenBtn').addEventListener('click', async () => {
+    const t = parseWhen($('vWhen').value, $('vTz').value);
+    if (!Number.isFinite(t)) { $('vErr').textContent = 'enter a date and time'; return; }
+    if (t < CHAIN.genesisTime) { $('vErr').textContent = 'quicknet started at ' + utc(CHAIN.genesisTime) + ' UTC; there is no number before that'; return; }
+    const r = SP.roundAt(t);
+    if (SP.roundTime(r) > Date.now() / 1000 + 1) { $('vErr').textContent = 'that time is in the future: round ' + r + ' does not exist yet'; return; }
+    $('vRound').value = r;
+    $('vErr').textContent = 'fetching round ' + r + '…';
+    try {
+      showVerified(validateBeacon(await fetchRound(r)));
+      $('vLookupMsg').textContent = 'Round ' + r + ' was the number showing from ' + utc(SP.roundTime(r)) + ' to ' + utc(SP.roundTime(r) + CHAIN.period) + ' UTC.';
+    } catch (e) { $('vErr').textContent = 'could not fetch/verify round ' + r + ': ' + (e.message || e); }
+  });
 })();
 </script>
 </body>
