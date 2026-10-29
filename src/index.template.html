@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beacon Semiprime</title>
+<meta name="description" content="Fresh 16-digit semiprimes derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
+<style>
+  :root {
+    --bg: #f6f5f1; --fg: #1a1a1a; --muted: #6b6b66; --line: #d9d7d0; --card: #ffffff;
+    --accent: #1d4ed8; --ok: #15803d; --bad: #b91c1c; --warn: #b45309;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --fg: #ececea; --muted: #9a9a94; --line: #2e2e2c; --card: #1d1d1b;
+      --accent: #7aa2ff; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 0 16px 48px; }
+  main { max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 20px 0 12px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .01em; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px; font: inherit; cursor: pointer; }
+  nav button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  section[hidden] { display: none; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .status { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+  .status b { color: var(--fg); font-weight: 600; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.bad { color: var(--bad); border-color: var(--bad); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  .N { font: 600 clamp(26px, 7vw, 44px)/1.2 var(--mono); letter-spacing: .04em; word-break: break-word; margin: 10px 0 4px; }
+  .words { font-size: clamp(18px, 4.5vw, 24px); font-weight: 500; margin: 4px 0 10px; line-height: 1.35; }
+  .words span { margin-right: .35em; }
+  .small { font-size: 14px; color: var(--muted); }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.secondary { background: none; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  input[type=text], textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 90px; }
+  .result { margin-top: 8px; font-weight: 600; }
+  .result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
+  .timer { font: 500 20px var(--mono); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.mono { font-family: var(--mono); font-size: 13px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  .reveal { font-family: var(--mono); margin-top: 6px; }
+  .err { color: var(--bad); }
+  code { font-family: var(--mono); font-size: 90%; }
+  footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  footer code { word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Beacon Semiprime</h1>
+    <div class="status" id="beaconStatus"><span class="pill">connecting…</span></div>
+  </header>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-tab="live">Live</button>
+    <button role="tab" aria-selected="false" data-tab="verify">Verify a round</button>
+    <button role="tab" aria-selected="false" data-tab="about">How it works</button>
+  </nav>
+
+  <!-- ================= LIVE ================= -->
+  <section id="tab-live">
+    <div class="card" id="liveCard">
+      <div class="status">
+        <span>round <b id="liveRound">—</b></span>
+        <span><b id="liveTime">—</b> UTC</span>
+        <span id="liveSig" class="pill">—</span>
+      </div>
+      <div class="N" id="liveN">— — — —</div>
+      <div class="words" id="liveWords"></div>
+      <div class="row">
+        <button class="primary" id="captureBtn" disabled>Capture this number</button>
+        <span class="small">A new number arrives every 3 s. Capture freezes one and starts the clock.</span>
+      </div>
+      <div class="err small" id="liveErr"></div>
+    </div>
+
+    <div class="card" id="capCard" hidden>
+      <div class="status">
+        <span>captured round <b id="capRound"></b></span>
+        <span><b id="capTime"></b> UTC</span>
+        <span class="pill ok">signature verified</span>
+        <span class="timer" id="capTimer">0.0 s</span>
+      </div>
+      <div class="N" id="capN"></div>
+      <div class="words" id="capWords"></div>
+      <label class="small" for="answer">Savant's answer — one or two factors, as digits or three words each</label>
+      <input type="text" id="answer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
+      <div class="row">
+        <button class="primary" id="checkBtn">Check</button>
+        <button class="secondary" id="stopBtn">Stop clock</button>
+        <button class="secondary" id="releaseBtn">Back to live</button>
+      </div>
+      <div class="result" id="capResult"></div>
+      <details id="revealBox" style="margin-top:10px">
+        <summary>Reveal factors (recomputed on demand; nothing is stored)</summary>
+        <div class="reveal" id="capReveal"></div>
+      </details>
+    </div>
+
+    <div class="card" id="logCard" hidden>
+      <div class="row" style="margin-top:0; justify-content: space-between">
+        <b>Session log</b>
+        <span><button class="secondary" id="exportBtn">Export JSON</button> <button class="secondary" id="copyBtn">Copy JSON</button> <button class="secondary" id="clearBtn">Clear</button></span>
+      </div>
+      <textarea id="exportBox" hidden readonly aria-label="session JSON"></textarea>
+      <div class="small" id="copyMsg"></div>
+      <table id="logTable"><thead><tr><th>#</th><th>Round</th><th>UTC</th><th>N</th><th>Answer</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ================= VERIFY ================= -->
+  <section id="tab-verify" hidden>
+    <div class="card">
+      <p class="small" style="margin-top:0">Enter a round number to fetch it, or paste the round's JSON (<code>{"round":…,"randomness":…,"signature":…}</code>) to verify offline. The number is recomputed here, in your browser, from the spec.</p>
+      <div class="row" style="margin-top:0">
+        <input type="text" id="vRound" inputmode="numeric" placeholder="round number" style="max-width:220px">
+        <button class="primary" id="vFetchBtn">Fetch &amp; verify</button>
+      </div>
+      <textarea id="vJson" placeholder='paste round JSON here for offline verification'></textarea>
+      <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
+      <div class="err small" id="vErr"></div>
+    </div>
+    <div class="card" id="vCard" hidden>
+      <div class="status">
+        <span>round <b id="vrRound"></b></span>
+        <span><b id="vrTime"></b> UTC</span>
+        <span id="vrSig" class="pill"></span>
+        <span id="vrRand" class="pill"></span>
+      </div>
+      <div class="N" id="vrN"></div>
+      <div class="words" id="vrWords"></div>
+      <div class="small">randomness <code id="vrRandHex"></code></div>
+      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Check factors against this N</label>
+      <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="one or two factors, digits or words">
+      <div class="row"><button class="primary" id="vCheckBtn">Check</button></div>
+      <div class="result" id="vResult"></div>
+      <details style="margin-top:10px"><summary>Reveal factors</summary><div class="reveal" id="vReveal"></div></details>
+    </div>
+  </section>
+
+  <!-- ================= ABOUT ================= -->
+  <section id="tab-about" hidden>
+    <div class="card">
+      <h3 style="margin-top:0">What this is</h3>
+      <p>A live test of mental factoring. Every 3 seconds the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon publishes a round of randomness that nobody can know in advance; the page turns each round into a 16-digit semiprime <i>N = p·q</i> with two 8-digit prime factors. Because the derivation is deterministic and public, anyone can confirm later that the number shown at a given moment was the only number that could have been shown, and that it could not have existed before that moment.</p>
+      <h3>Derivation (SPEC.md v1)</h3>
+      <ol>
+        <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>
+        <li>For tag <code>"p"</code>, then <code>"q"</code>: compute <code>SHA-256(randomness ‖ tag ‖ ctr)</code> with a one-byte counter starting at 0; take the first 4 bytes as a big-endian integer <i>x</i>; reject and increment the counter if <i>x</i> ≥ 4 239 387 826; otherwise the candidate is <code>31622777 + (x mod 68377223)</code>.</li>
+        <li>The factor is the smallest prime ≥ candidate (primality by trial division to 10⁴, which is exact below 10⁸). Reject if it reaches 10⁸ or, for <i>q</i>, equals <i>p</i>.</li>
+        <li><i>N = p·q</i>. The lower bound ⌈√10·10⁷⌉ guarantees exactly 16 digits.</li>
+      </ol>
+      <h3>Words</h3>
+      <p><i>N</i> is also shown as 5 words from the BIP39 English list (11 bits each, big-endian). A factor is 3 words. Typing a factor as words or digits is equivalent. The first 4 letters of a word are enough.</p>
+      <h3>What it does and doesn't prove</h3>
+      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester. It does not stop a device from factoring a 16-digit number instantly, so the test is only meaningful if the person being tested has no device and no confederate. Factors are never written to the page until you tap "Reveal"; they are recomputed from public data, so this is a courtesy against casual snooping, not a secret.</p>
+      <h3>Verify independently</h3>
+      <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>.</p>
+    </div>
+  </section>
+
+  <footer>
+    chain <code>52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971</code> (quicknet, 3 s, bls-unchained-g1-rfc9380) ·
+    crypto: @noble/curves 2.4.0, @noble/hashes 2.4.0, vendored ·
+    wordlist: BIP39 English (sha256 2f5eed53…4dbda)
+  </footer>
+</main>
+
+<script>/* __VENDOR__ */</script>
+<script>globalThis.BIP39_WORDS = /* __WORDLIST__ */;</script>
+<script>/* __CORE__ */</script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const CHAIN = SP.CHAIN;
+
+  // ---------- helpers ----------
+  function utc(unix) {
+    const d = new Date(unix * 1000);
+    return d.toISOString().replace('T', ' ').slice(0, 19);
+  }
+  function renderWords(el, ws) { el.innerHTML = ws.map(w => '<span>' + w + '</span>').join(' '); }
+  function setPill(el, cls, text) { el.className = 'pill ' + cls; el.textContent = text; }
+  function showTab(name) {
+    document.querySelectorAll('nav [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
+    ['live', 'verify', 'about'].forEach(t => $('tab-' + t).hidden = (t !== name));
+  }
+  document.querySelectorAll('nav [role=tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  async function fetchWithTimeout(url, ms) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try { const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+    finally { clearTimeout(t); }
+  }
+  async function fetchRound(which) {    // which: 'latest' or a round number
+    let lastErr;
+    for (const relay of CHAIN.relays) {
+      try { return await fetchWithTimeout(relay + '/' + CHAIN.hash + '/public/' + which, 4000); }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('all relays failed');
+  }
+
+  // Validate a beacon object fully. Returns {round, randomness, signature, time, N} or throws.
+  function validateBeacon(b) {
+    const round = Number(b.round);
+    if (!Number.isInteger(round) || round < 1) throw new Error('bad round');
+    const randomness = String(b.randomness).toLowerCase(), signature = String(b.signature).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(randomness) || !/^[0-9a-f]{96}$/.test(signature)) throw new Error('malformed beacon');
+    const sigOk = __noble.verifyRound(signature, SP.roundMessage(round), CHAIN.publicKey, CHAIN.DST);
+    const randOk = SP.randomnessMatches(randomness, signature);
+    return { round, randomness, signature, sigOk, randOk, time: SP.roundTime(round), N: SP.deriveN(randomness) };
+  }
+
+  // ---------- live ticker ----------
+  let live = null;           // last validated beacon shown
+  let liveErrCount = 0;
+  async function tick() {
+    try {
+      const b = validateBeacon(await fetchRound('latest'));
+      if (!b.sigOk || !b.randOk) throw new Error('beacon failed verification (sig ' + b.sigOk + ', randomness ' + b.randOk + ')');
+      if (live && b.round < live.round) return;        // a lagging relay; keep the newer one
+      live = b; liveErrCount = 0;
+      $('liveRound').textContent = b.round;
+      $('liveTime').textContent = utc(b.time);
+      setPill($('liveSig'), 'ok', 'signature verified');
+      $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
+      renderWords($('liveWords'), SP.encodeN(b.N));
+      $('liveErr').textContent = '';
+      $('captureBtn').disabled = false;
+      const age = Date.now() / 1000 - b.time;
+      setPill(document.querySelector('#beaconStatus .pill'), age > 15 ? 'warn' : 'ok', age > 15 ? 'beacon stale (' + Math.round(age) + ' s)' : 'quicknet live');
+    } catch (e) {
+      liveErrCount++;
+      $('liveErr').textContent = 'Beacon unavailable: ' + (e.message || e) + (liveErrCount > 1 ? ' (' + liveErrCount + ' failures)' : '');
+      setPill(document.querySelector('#beaconStatus .pill'), 'bad', 'beacon unreachable');
+      setPill($('liveSig'), 'bad', 'no verified round');
+      $('captureBtn').disabled = true;
+      $('liveN').textContent = '— — — —'; $('liveWords').textContent = ''; live = null;
+    }
+  }
+  // Align polling to the beacon period: fire ~400 ms after each expected round boundary.
+  function schedule() {
+    const now = Date.now();
+    const periodMs = CHAIN.period * 1000, genesisMs = CHAIN.genesisTime * 1000;
+    const next = genesisMs + Math.ceil((now - genesisMs) / periodMs) * periodMs + 400;
+    setTimeout(async () => { await tick(); schedule(); }, Math.max(200, next - now));
+  }
+  tick().then(schedule);
+
+  // ---------- capture / answer ----------
+  let cap = null, timerId = null, log = [];
+  function fmtElapsed(ms) { return (ms / 1000).toFixed(1) + ' s'; }
+  function startTimer() {
+    stopTimer();
+    timerId = setInterval(() => { if (cap && !cap.stoppedAt) $('capTimer').textContent = fmtElapsed(Date.now() - cap.startedAt); }, 100);
+  }
+  function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; }
+
+  $('captureBtn').addEventListener('click', () => {
+    if (!live) return;
+    cap = { ...live, startedAt: Date.now(), stoppedAt: null };
+    $('capRound').textContent = cap.round;
+    $('capTime').textContent = utc(cap.time);
+    $('capN').textContent = SP.groupDigits(cap.N.toString(), 4);
+    renderWords($('capWords'), SP.encodeN(cap.N));
+    $('capResult').textContent = ''; $('capResult').className = 'result';
+    $('capReveal').textContent = ''; $('revealBox').open = false;
+    $('answer').value = '';
+    $('capCard').hidden = false; $('liveCard').hidden = true;
+    $('capTimer').textContent = '0.0 s';
+    startTimer();
+    $('answer').focus();
+  });
+
+  function doCheck(N, text) {
+    const parsed = SP.parseAnswer(text);           // throws on malformed input
+    const res = SP.checkAnswer(N, parsed.factors);
+    return { factors: parsed.factors, ...res };
+  }
+
+  $('checkBtn').addEventListener('click', () => {
+    if (!cap) return;
+    const out = $('capResult');
+    let r;
+    try { r = doCheck(cap.N, $('answer').value); }
+    catch (e) { out.className = 'result bad'; out.textContent = e.message; return; }
+    const elapsed = (cap.stoppedAt || Date.now()) - cap.startedAt;
+    if (r.ok && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); }
+    out.className = 'result ' + (r.ok ? 'ok' : 'bad');
+    out.textContent = r.ok ? 'Correct — ' + r.factors.join(' × ') + (r.factors.length === 1 ? ' divides N' : ' = N') + ' (' + fmtElapsed(cap.stoppedAt - cap.startedAt) + ')'
+                           : 'Wrong — ' + r.reason;
+    log.push({ round: cap.round, time: cap.time, N: cap.N.toString(), answer: $('answer').value.trim(),
+               factors: r.factors.map(String), correct: r.ok, elapsedMs: elapsed, at: new Date().toISOString(),
+               beacon: { round: cap.round, randomness: cap.randomness, signature: cap.signature } });
+    renderLog();
+  });
+  $('answer').addEventListener('keydown', e => { if (e.key === 'Enter') $('checkBtn').click(); });
+  $('stopBtn').addEventListener('click', () => { if (cap && !cap.stoppedAt) { cap.stoppedAt = Date.now(); $('capTimer').textContent = fmtElapsed(cap.stoppedAt - cap.startedAt); } });
+  $('releaseBtn').addEventListener('click', () => { stopTimer(); cap = null; $('capCard').hidden = true; $('liveCard').hidden = false; });
+  $('revealBox').addEventListener('toggle', () => {
+    if (!cap || !$('revealBox').open) { $('capReveal').textContent = ''; return; }
+    const f = SP.deriveFactors(cap.randomness);
+    $('capReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
+  });
+
+  function renderLog() {
+    $('logCard').hidden = log.length === 0;
+    const tb = $('logTable').querySelector('tbody');
+    tb.innerHTML = log.map((e, i) =>
+      '<tr><td>' + (i + 1) + '</td><td>' + e.round + '</td><td class="mono">' + utc(e.time) + '</td><td class="mono">' + e.N + '</td><td class="mono">' + esc(e.answer) + '</td><td style="color:' + (e.correct ? 'var(--ok)' : 'var(--bad)') + '">' + (e.correct ? 'correct' : 'wrong') + '</td><td>' + fmtElapsed(e.elapsedMs) + '</td></tr>').join('');
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function sessionJSON() {
+    return JSON.stringify({ spec: 'beacon-semiprime v1', chain: CHAIN.hash, exportedAt: new Date().toISOString(), entries: log }, null, 2);
+  }
+  $('copyBtn').addEventListener('click', async () => {
+    const text = sessionJSON();
+    $('exportBox').value = text; $('exportBox').hidden = false;
+    try { await navigator.clipboard.writeText(text); $('copyMsg').textContent = 'Copied to clipboard.'; }
+    catch (e) { $('exportBox').select(); $('copyMsg').textContent = 'Clipboard unavailable — select the text above and copy it.'; }
+  });
+  $('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([sessionJSON()], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'semiprime-session-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  $('clearBtn').addEventListener('click', () => { if (confirm('Clear the session log?')) { log = []; renderLog(); } });
+
+  // ---------- verify tab ----------
+  let ver = null;
+  function showVerified(b) {
+    ver = b;
+    $('vrRound').textContent = b.round;
+    $('vrTime').textContent = utc(b.time);
+    setPill($('vrSig'), b.sigOk ? 'ok' : 'bad', b.sigOk ? 'BLS signature valid' : 'BLS signature INVALID');
+    setPill($('vrRand'), b.randOk ? 'ok' : 'bad', b.randOk ? 'randomness = SHA-256(sig)' : 'randomness MISMATCH');
+    $('vrN').textContent = SP.groupDigits(b.N.toString(), 4);
+    renderWords($('vrWords'), SP.encodeN(b.N));
+    $('vrRandHex').textContent = b.randomness;
+    $('vResult').textContent = ''; $('vResult').className = 'result';
+    const f = SP.deriveFactors(b.randomness);
+    $('vReveal').textContent = f.p + ' (' + SP.encodeFactor(f.p).join(' ') + ')  ×  ' + f.q + ' (' + SP.encodeFactor(f.q).join(' ') + ')';
+    $('vReveal').parentElement.open = false;
+    $('vCard').hidden = false; $('vErr').textContent = '';
+  }
+  $('vFetchBtn').addEventListener('click', async () => {
+    const r = Number($('vRound').value.trim());
+    if (!Number.isInteger(r) || r < 1) { $('vErr').textContent = 'enter a positive round number'; return; }
+    $('vErr').textContent = 'fetching…';
+    try { showVerified(validateBeacon(await fetchRound(r))); }
+    catch (e) { $('vErr').textContent = 'could not fetch/verify round ' + r + ': ' + (e.message || e); }
+  });
+  $('vJsonBtn').addEventListener('click', () => {
+    try { showVerified(validateBeacon(JSON.parse($('vJson').value))); }
+    catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
+  });
+  $('vCheckBtn').addEventListener('click', () => {
+    if (!ver) return;
+    const out = $('vResult');
+    try { const r = doCheck(ver.N, $('vAnswer').value); out.className = 'result ' + (r.ok ? 'ok' : 'bad'); out.textContent = r.ok ? 'Correct — ' + r.factors.join(' × ') : 'Wrong — ' + r.reason; }
+    catch (e) { out.className = 'result bad'; out.textContent = e.message; }
+  });
+  $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vCheckBtn').click(); });
+})();
+</script>
+</body>
+</html>

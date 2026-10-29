@@ -1,0 +1,9 @@
+{
+  "spec": "beacon-semiprime v1",
+  "chain": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+  "rounds": [
+    {"round": 1, "randomness": "1466a6cd24e327188770752f6134001c64d6efcc590ccc26b721611ad96f165a", "signature": "b55e7cb2d5c613ee0b2e28d6750aabbb78c39dcc96bd9d38c2c2e12198df95571de8e8e402a0cc48871c7089a2b3af4b"},
+    {"round": 20000000, "randomness": "f39c98df5525968e6622e0c63edb3d1f9c5607cf780db78abdded36e4b3dba95", "signature": "96892582a33552a7b67ba44ef09c3ccd535bbebe760c93ecf45be8958d0c0f06390c6d19d7bf492eb806af7eef6b125c"},
+    {"round": 33470004, "randomness": "cd5ba6df5d05fb3070031cb5d342ab122fe78d26601e5c69a5295456ca679068", "signature": "8c2760d28ecc2624acbda5cbf58e05e950e8f04bb4afdebe5a7057024f11ac0775f2bd21405c89ebd879b16e8bb4e4a3"}
+  ]
+}
