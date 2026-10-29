@@ -118,6 +118,11 @@ with sync_playwright() as p:
     check(page.inner_text('#liveN').replace(' ', '') == newest_n and page.inner_text('#liveRound') == str(feed_rounds[0]), 'update focuses the newest round')
     check(page.inner_text('#updateBtn') == 'Up to date', 'update button idle again')
     check(page.inner_text('#liveWordsNote') == '(encoded as BIP39 big-endian)', 'words carry the BIP39 big-endian note')
+    page.set_viewport_size({'width': 760, 'height': 900})
+    beside = page.evaluate('''() => { const w = document.getElementById('liveWords').getBoundingClientRect(), n = document.getElementById('liveWordsNote').getBoundingClientRect(), r = document.querySelector('.wordsRow').getBoundingClientRect();
+        return n.left >= w.right && Math.abs(n.bottom - w.bottom) < 12 && r.right - n.right < 2; }''')
+    check(beside, 'BIP39 note sits to the right of the words at desktop width')
+    page.set_viewport_size({'width': 420, 'height': 900})
 
     # clicking an older round in the feed focuses it; Update then offers the newer rounds again
     older_n = page.inner_text('#feedList li:nth-child(2) .n').replace(' ', '')
