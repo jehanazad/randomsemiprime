@@ -17,8 +17,9 @@
   ],
   "triggers": { "crons": ["* * * * *"] },
   "vars": {
-    // Relay requests per cron run: new rounds first, the rest backfills older ones.
-    // The Workers free plan allows 50 subrequests per invocation; paid plans allow 1000.
+    // Relay requests per cron run (every attempt counts): new rounds first, the rest backfills
+    // older ones. The Workers free plan allows 50 external subrequests per invocation; paid
+    // plans allow 10,000. CPU per cron run is 10 ms on the free plan, so keep this modest there.
     "SUBREQUEST_BUDGET": "45"
   },
   "routes": [

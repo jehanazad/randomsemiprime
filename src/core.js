@@ -39,18 +39,24 @@
     return out; // 1229 primes
   })();
 
-  function isPrime(n) {             // exact for 0 <= n < 10^8
-    if (n < 2n) return false;
-    for (const p of SMALL_PRIMES) {
-      if (p * p > n) return true;
-      if (n % p === 0n) return n === p;
+  // Trial division is done in Number arithmetic, which is exact below 2^53 and much faster than
+  // BigInt; every value here is below 10^8 + 10^4.
+  const SMALL_PRIMES_NUM = SMALL_PRIMES.map(Number);
+  function isPrimeNum(x) {          // exact for 0 <= x < 10^8
+    if (x < 2) return false;
+    for (let i = 0; i < SMALL_PRIMES_NUM.length; i++) {
+      const p = SMALL_PRIMES_NUM[i];
+      if (p * p > x) return true;
+      if (x % p === 0) return x === p;
     }
     return true;
   }
+  function isPrime(n) { return isPrimeNum(Number(n)); }   // n: BigInt or Number, 0 <= n < 10^8
 
-  function nextPrime(n) {           // smallest prime >= n
-    while (!isPrime(n)) n += 1n;
-    return n;
+  function nextPrime(n) {           // smallest prime >= n (BigInt in, BigInt out)
+    let x = Number(n);
+    while (!isPrimeNum(x)) x++;
+    return BigInt(x);
   }
 
   function hexToBytes(hex) {

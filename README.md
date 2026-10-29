@@ -51,7 +51,11 @@ free plan's 10 ms of CPU per run); the page re-verifies the signature itself, so
 tampered archive row is rejected in the browser and never shown as genuine. Distinct rounds can
 share a number (a few times per year of rounds), so a lookup by number returns every round that
 produced it. Budget note: the whole tick is CPU-light (about 4 ms for 45 rounds in Node), but if
-the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BUDGET`.
+the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BUDGET`. D1 calls
+count against a separate, higher limit and are not budgeted.
+
+Each tick records when it started and how it ended in the `meta` table, and `/api/status` (and
+the Verify tab) report it, so the cron's health is visible without log access.
 
 API: `GET /api/status`, `GET /api/n/<16 digits>` (`{n, rounds: [...]}`, newest first),
 `GET /api/round/<round>`, `GET /api/range?from=<round>&to=<round>` (at most 100 rounds).

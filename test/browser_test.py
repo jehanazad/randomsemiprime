@@ -67,7 +67,8 @@ with sync_playwright() as p:
         path = request.url.split('/api/', 1)[1]
         def js(body, status=200): route.fulfill(status=status, content_type='application/json', body=json.dumps(body))
         if path == 'status':
-            return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004)})
+            return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004),
+                       'tick': {'started': {'at': 1793250000, 'budget': 45}, 'finished': {'at': 1793250004, 'ms': 4000, 'forward': 20, 'backward': 25}}})
         if path.startswith('n/'):
             for r, n in N_OF.items():
                 if n == path[2:]:
@@ -157,7 +158,7 @@ with sync_playwright() as p:
     # verify tab: by round number
     page.click('nav [data-tab=verify]')
     page.wait_for_function("document.getElementById('vArchive').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
-    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#vArchive'), 'archive coverage is shown')
+    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#vArchive') and page.inner_text('#vArchive').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older).'), 'archive coverage and last run are shown: ' + page.inner_text('#vArchive'))
     page.fill('#vQuery', '1'); page.press('#vQuery', 'Enter')
     page.wait_for_function("!document.getElementById('vCard').hidden", timeout=15000)
     check(page.inner_text('#vrN').replace(' ', '') == '8766449459018651', 'verify by round number recomputes round 1 N from spec')

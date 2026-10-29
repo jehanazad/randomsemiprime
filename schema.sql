@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS rounds (
 -- Not unique: distinct rounds can share an N. Dropped first so an older unique index is replaced.
 DROP INDEX IF EXISTS rounds_n;
 CREATE INDEX rounds_n ON rounds(n);
+-- Tick bookkeeping, so /api/status can report the cron's health without log access:
+-- k = 'tick_started' | 'tick_finished' | 'tick_error', v = JSON.
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);

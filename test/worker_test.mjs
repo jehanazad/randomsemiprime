@@ -45,14 +45,15 @@ await new Promise(r => mock.listen(0, '127.0.0.1', r));
 const MOCK = 'http://127.0.0.1:' + mock.address().port;
 
 // ---- unit: archiveTick against an in-memory store ----
-// SUBREQUEST_BUDGET 30 reserves 3 D1 calls, leaving 27 relay attempts per tick.
+// SUBREQUEST_BUDGET 30 allows 30 relay attempts per tick (D1 calls are not counted).
 let attempts = 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
 {
   const rows = new Map();
+  const meta = new Map();
   const mem = {
-    prepare: sql => ({ bind: (...a) => ({ run: async () => { rows.set(a[0], { round: a[0], n: a[1], randomness: a[2], signature: a[3] }); } }),
+    prepare: sql => ({ bind: (...a) => ({ run: async () => { if (/INTO meta/.test(sql)) meta.set(a[0], a[1]); else rows.set(a[0], { round: a[0], n: a[1], randomness: a[2], signature: a[3] }); } }),
       first: async () => { const ks = [...rows.keys()]; return { first: ks.length ? Math.min(...ks) : null, last: ks.length ? Math.max(...ks) : null, count: ks.length }; } }),
     batch: async stmts => { for (const s of stmts) await s.run(); },
   };
@@ -60,16 +61,17 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
   const now = 1793242214;
   const cur = SP.roundAt(now - 1);
   let r = await archiveTick(env, now);
-  check(r.forward === 20 && r.backward === 7 && attempts === 27, `first tick fills 20 forward + 7 backward with 27 attempts (${r.forward}+${r.backward}, ${attempts})`);
-  check(rows.has(cur) && rows.has(cur - 26) && rows.size === 27, 'archive covers current-26 .. current');
+  check(r.forward === 20 && r.backward === 10 && attempts === 30, `first tick fills 20 forward + 10 backward with 30 attempts (${r.forward}+${r.backward}, ${attempts})`);
+  check(rows.has(cur) && rows.has(cur - 29) && rows.size === 30, 'archive covers current-29 .. current');
+  check(JSON.parse(meta.get('tick_started')).budget === 30, 'tick records its start');
   r = await archiveTick(env, now + 6);       // two new rounds exist now
-  check(r.forward === 2 && r.backward === 25, `second tick: 2 forward + 25 backward (${r.forward}+${r.backward})`);
-  failing.add(cur - 51 - 5);                 // archive now spans cur-51..cur; the next backfill hits this at its 5th round
+  check(r.forward === 2 && r.backward === 28, `second tick: 2 forward + 28 backward (${r.forward}+${r.backward})`);
+  failing.add(cur - 57 - 5);                 // archive now spans cur-57..cur; the next backfill hits this at its 5th round
   r = await archiveTick(env, now + 6);
   check(r.forward === 0 && r.backward === 4, `backfill stops at the first failed round (${r.backward})`);
   failing.clear();
   r = await archiveTick(env, now + 6);
-  check(r.backward === 27, 'and resumes from it next run');
+  check(r.backward === 30, 'and resumes from it next run');
   const ks = [...rows.keys()];
   check(Math.max(...ks) - Math.min(...ks) + 1 === rows.size, 'no holes in the archive');
   // budget counts relay attempts: with a dead first relay every round costs two, and D1 calls are reserved
@@ -77,7 +79,7 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
   const env2 = { DB: mem, DRAND_RELAYS: dead + ',' + MOCK, SUBREQUEST_BUDGET: '30' };
   attempts = 0;
   r = await archiveTick(env2, now + 6);
-  check(r.forward === 0 && r.backward === 10 && attempts === 27, `failover attempts count against the budget: 10 rounds, 27 attempts (${r.backward}, ${attempts})`);
+  check(r.forward === 0 && r.backward === 10 && attempts === 30, `failover attempts count against the budget: 10 rounds, 30 attempts (${r.backward}, ${attempts})`);
   // an empty archive whose forward fetch fails inserts nothing and does not backfill
   rows.clear(); failing.add(cur - 19);
   r = await archiveTick(env, now);
@@ -88,13 +90,13 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
 // ---- integration: wrangler dev (local D1) ----
 const PORT = 8790 + Math.floor(Math.random() * 100);
 execSync('npx wrangler d1 execute randomsemiprime-archive --local --file schema.sql', { cwd: ROOT, stdio: 'ignore' });
-execSync('npx wrangler d1 execute randomsemiprime-archive --local --command "DELETE FROM rounds"', { cwd: ROOT, stdio: 'ignore' });
+execSync('npx wrangler d1 execute randomsemiprime-archive --local --command "DELETE FROM rounds; DELETE FROM meta"', { cwd: ROOT, stdio: 'ignore' });
 const base = 'http://127.0.0.1:' + PORT;
 let dev = null, devLog = '';
 async function startDev() {
   // wrangler's own bin, not npx, so signals reach it and the port is released on stop
   dev = spawn(path.join(ROOT, 'node_modules', '.bin', 'wrangler'), ['dev', '--test-scheduled', '--ip', '127.0.0.1', '--port', String(PORT),
-    '--var', 'DRAND_RELAYS:' + MOCK, '--var', 'SUBREQUEST_BUDGET:33'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    '--var', 'DRAND_RELAYS:' + MOCK, '--var', 'SUBREQUEST_BUDGET:30'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   dev.stdout.on('data', d => { devLog += d; }); dev.stderr.on('data', d => { devLog += d; });
   let up = false;
   for (let i = 0; i < 120 && !up; i++) { await new Promise(r => setTimeout(r, 500)); try { up = (await fetch(base + '/api/status')).ok; } catch (e) { /* not yet */ } }
@@ -113,7 +115,7 @@ const get = async (p) => { const r = await fetch(base + p); return { status: r.s
 try {
   await startDev();
   const s0 = (await get('/api/status')).body;
-  check(s0.count === 0 && s0.first === null, 'fresh archive is empty');
+  check(s0.count === 0 && s0.first === null && Object.keys(s0.tick).length === 0, 'fresh archive is empty with no tick recorded');
   const t0 = await fetch(base + '/__scheduled?cron=*+*+*+*+*');
   check(t0.ok, 'scheduled trigger accepted');
   let s1;
@@ -121,6 +123,7 @@ try {
   const cur = SP.roundAt(Math.floor(Date.now() / 1000));
   check(s1.count === 30 && s1.last - s1.first === 29 && cur - s1.last <= 2, `tick archived 30 contiguous rounds up to now (count ${s1.count}, last ${s1.last}, current ${cur})`);
   check(s1.lastTime === SP.roundTime(s1.last), 'status reports round times');
+  check(s1.tick.started && s1.tick.finished && s1.tick.finished.forward === 20 && s1.tick.finished.backward === 10 && !s1.tick.error, `status reports the tick outcome (${JSON.stringify(s1.tick)})`);
   const range = (await get('/api/range?from=' + s1.first + '&to=' + s1.last)).body;
   check(range.rounds.length === 30 && range.rounds[0].round === s1.last && range.rounds[29].round === s1.first, 'range returns all rows newest first');
   const row = range.rounds[7];

@@ -1,13 +1,14 @@
 // Cloudflare Worker: serves index.html as a static asset and keeps an archive of rounds in D1.
 //
-//   GET /api/status            -> {first, last, count, firstTime, lastTime}
+//   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error}}
 //   GET /api/n/<16 digits>     -> {n, rounds: [{round, n, randomness, signature}, ...]} newest first, or 404
 //   GET /api/round/<round>     -> {round, n, randomness, signature} or 404
 //   GET /api/range?from=&to=   -> {rounds: [...]} for a round range, newest first, at most RANGE_LIMIT
 //
 // A cron trigger runs archiveTick every minute: it records rounds newer than the archive's last
-// round, then backfills older rounds. SUBREQUEST_BUDGET bounds the subrequests one run may make:
-// every relay attempt (including failovers) and the D1 calls count, as Cloudflare counts them.
+// round, then backfills older rounds. SUBREQUEST_BUDGET bounds the relay requests one run may make,
+// every attempt including failovers (the free plan allows 50 external subrequests per invocation;
+// D1 calls count separately). Each tick notes when it started and how it ended in the meta table.
 // Rows only map N to a round; the page verifies each round's BLS signature in the browser.
 import { sha256 } from '@noble/hashes/sha2.js';
 import '../src/core.js';           // defines globalThis.SP (reads globalThis.__noble lazily)
@@ -18,7 +19,6 @@ const CHAIN = SP.CHAIN;
 const RANGE_LIMIT = 100;
 const FETCH_TIMEOUT_MS = 5000;
 const PARALLEL = 10;
-const D1_CALLS = 3;                 // bounds + two batch inserts per tick
 const TICK_DEADLINE_MS = 40000;     // stop starting fetches after this, so runs do not pile up
 
 const json = (body, status = 200, cache = 'no-store') =>
@@ -56,6 +56,15 @@ async function bounds(db) {
   const r = await db.prepare('SELECT MIN(round) AS first, MAX(round) AS last, COUNT(*) AS count FROM rounds').first();
   return { first: r.first ?? null, last: r.last ?? null, count: r.count ?? 0 };
 }
+async function setMeta(db, k, v) {
+  await db.prepare('INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)').bind(k, JSON.stringify(v)).run();
+}
+async function getMeta(db) {
+  const { results } = await db.prepare('SELECT k, v FROM meta').all();
+  const out = {};
+  for (const r of results) { try { out[r.k.replace(/^tick_/, '')] = JSON.parse(r.v); } catch (e) { out[r.k] = r.v; } }
+  return out;
+}
 async function insertRows(db, rows) {
   if (!rows.length) return;
   const stmt = db.prepare('INSERT OR IGNORE INTO rounds (round, n, randomness, signature) VALUES (?1, ?2, ?3, ?4)');
@@ -83,11 +92,11 @@ async function collect(env, rounds, budget, deadline) {
 
 // One scheduled run. Exported for tests; `now` is unix seconds.
 export async function archiveTick(env, now = Math.floor(Date.now() / 1000)) {
-  const total = Math.max(D1_CALLS + 1, Number(env.SUBREQUEST_BUDGET) || 45);
-  const budget = { left: total - D1_CALLS };          // relay attempts this run may make
+  const budget = { left: Math.max(1, Number(env.SUBREQUEST_BUDGET) || 45) };   // relay attempts this run
   const deadline = Date.now() + TICK_DEADLINE_MS;
   const current = SP.roundAt(now - 1);                 // one second of slack for relay lag
   if (current < 1) return { forward: 0, backward: 0 };
+  await setMeta(env.DB, 'tick_started', { at: now, budget: budget.left });
   const { first, last } = await bounds(env.DB);
   // Forward: everything newer than the archive. An empty archive starts a little behind "now".
   const fwdStart = last ? last + 1 : Math.max(1, current - 19);
@@ -105,6 +114,18 @@ export async function archiveTick(env, now = Math.floor(Date.now() / 1000)) {
   await insertRows(env.DB, bwdRows);
   return { forward: fwdRows.length, backward: bwdRows.length };
 }
+// The scheduled entry point: runs a tick and records how it ended.
+async function runTick(env) {
+  const started = Date.now();
+  try {
+    const r = await archiveTick(env);
+    await setMeta(env.DB, 'tick_finished', { at: Math.floor(Date.now() / 1000), ms: Date.now() - started, ...r });
+    console.log('archive: +' + r.forward + ' forward, +' + r.backward + ' backward');
+  } catch (e) {
+    console.log('archive tick failed: ' + (e.message || e));
+    try { await setMeta(env.DB, 'tick_error', { at: Math.floor(Date.now() / 1000), message: String(e && e.message || e) }); } catch (e2) { /* nothing left to do */ }
+  }
+}
 
 // ---- HTTP API ----
 const ROW_COLS = 'round, n, randomness, signature';
@@ -113,8 +134,10 @@ async function api(url, env) {
   let m;
   if (p === '/api/status') {
     const b = await bounds(env.DB);
+    let tick = {};
+    try { tick = await getMeta(env.DB); } catch (e) { tick = { error: 'meta table missing' }; }
     return json({ spec: 'beacon-semiprime v1', chain: CHAIN.hash, ...b,
-      firstTime: b.first ? SP.roundTime(b.first) : null, lastTime: b.last ? SP.roundTime(b.last) : null }, 200, 'public, max-age=30');
+      firstTime: b.first ? SP.roundTime(b.first) : null, lastTime: b.last ? SP.roundTime(b.last) : null, tick }, 200, 'public, max-age=30');
   }
   if ((m = /^\/api\/n\/(\d{16})$/.exec(p))) {
     // Distinct rounds can produce the same N (rare, but expected a few times per year of rounds).
@@ -147,7 +170,6 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(archiveTick(env).then(r => console.log('archive: +' + r.forward + ' forward, +' + r.backward + ' backward'))
-      .catch(e => console.log('archive tick failed: ' + (e.message || e))));
+    ctx.waitUntil(runTick(env));
   },
 };

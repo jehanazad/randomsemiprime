@@ -436,9 +436,13 @@
     try {
       archive = await apiGet('/api/status');
       if (!archive) throw new Error('no archive at this address');
-      $('vArchive').textContent = archive && archive.count
+      const t = archive.tick || {};
+      const health = t.error && (!t.finished || t.error.at > t.finished.at) ? ' Last run failed at ' + utc(t.error.at) + ' UTC: ' + t.error.message
+        : t.finished ? ' Last run ' + utc(t.finished.at) + ' UTC (+' + t.finished.forward + ' new, +' + t.finished.backward + ' older).'
+        : t.started ? ' A run started at ' + utc(t.started.at) + ' UTC and has not finished.' : ' No run recorded yet.';
+      $('vArchive').textContent = (archive.count
         ? 'Archive: ' + archive.count.toLocaleString() + ' rounds, from ' + archive.first + ' (' + utc(archive.firstTime) + ' UTC) to ' + archive.last + ' (' + utc(archive.lastTime) + ' UTC). Older rounds are still being added.'
-        : 'Archive: no rounds recorded yet.';
+        : 'Archive: no rounds recorded yet.') + health;
     } catch (e) {
       archive = null;
       $('vArchive').textContent = 'Archive unavailable (' + (e.message || e) + '). Rounds can still be verified by number, and ranges are fetched from the drand relays.';
