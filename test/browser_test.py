@@ -20,7 +20,8 @@ def check(cond, msg):
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
-    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, accept_downloads=True)
+    # A non-UTC zone so the local-time branch of the lookup is really exercised.
+    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, accept_downloads=True, timezone_id='America/New_York')
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -142,10 +143,12 @@ with sync_playwright() as p:
     check(page.inner_text('#vrSig') == 'BLS signature valid', 'looked-up round is verified')
     # local-time mode must agree with UTC mode once the browser's offset is applied
     offset = page.evaluate('new Date(%d).getTimezoneOffset() * 60' % (t * 1000))
+    check(offset != 0, f'browser runs in a non-UTC zone (offset {offset} s)')
+    page.evaluate("document.getElementById('vRound').value = ''; document.getElementById('vLookupMsg').textContent = ''")
     page.select_option('#vTz', 'local')
     page.fill('#vWhen', time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(t - offset))); page.click('#vWhenBtn')
-    page.wait_for_function("document.getElementById('vRound').value === '20000000'", timeout=5000)
-    check(page.input_value('#vRound') == '20000000', 'lookup in local time resolves to the same round')
+    page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0", timeout=15000)
+    check(page.input_value('#vRound') == '20000000' and page.inner_text('#vrN').replace(' ', '') == '2842566290086427', 'lookup in local time resolves to the same round')
     page.fill('#vWhen', '2099-01-01T12:34:56'); page.click('#vWhenBtn')
     check('future' in page.inner_text('#vErr'), 'future time is refused')
     page.fill('#vWhen', '2020-01-01T12:34:56'); page.click('#vWhenBtn')

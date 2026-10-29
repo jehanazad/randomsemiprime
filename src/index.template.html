@@ -460,7 +460,7 @@
     $('vErr').textContent = 'fetching round ' + r + '…';
     try {
       showVerified(validateBeacon(await fetchRound(r)));
-      $('vLookupMsg').textContent = 'Round ' + r + ' was the number showing from ' + utc(SP.roundTime(r)) + ' to ' + utc(SP.roundTime(r) + CHAIN.period) + ' UTC.';
+      $('vLookupMsg').textContent = 'Round ' + r + ' was the number showing from ' + utc(SP.roundTime(r)) + ' UTC for ' + CHAIN.period + ' s.';
     } catch (e) { $('vErr').textContent = 'could not fetch/verify round ' + r + ': ' + (e.message || e); }
   });
 })();
