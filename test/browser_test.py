@@ -118,10 +118,15 @@ with sync_playwright() as p:
     check(page.inner_text('#liveN').replace(' ', '') == newest_n and page.inner_text('#liveRound') == str(feed_rounds[0]), 'update focuses the newest round')
     check(page.inner_text('#updateBtn') == 'Up to date', 'update button idle again')
     check(page.inner_text('#liveWordsNote') == '(encoded as BIP39 big-endian)', 'words carry the BIP39 big-endian note')
+    follows = '''() => { const last = [...document.querySelectorAll('#liveWords span')].pop().getBoundingClientRect(), n = document.getElementById('liveWordsNote').getBoundingClientRect(), r = document.getElementById('liveWords').parentElement.getBoundingClientRect();
+        const sameLine = n.left >= last.right && Math.abs(n.bottom - last.bottom) < 12, nextLine = n.top >= last.bottom - 2 && n.left - r.left < 2;
+        return (sameLine || nextLine) && n.left < r.right - 100; }'''
     page.set_viewport_size({'width': 760, 'height': 900})
-    beside = page.evaluate('''() => { const w = document.getElementById('liveWords').getBoundingClientRect(), n = document.getElementById('liveWordsNote').getBoundingClientRect(), r = document.querySelector('.wordsRow').getBoundingClientRect();
-        return n.left >= w.right && Math.abs(n.bottom - w.bottom) < 12 && r.right - n.right < 2; }''')
-    check(beside, 'BIP39 note sits to the right of the words at desktop width')
+    check(page.evaluate(follows), 'BIP39 note follows the last word at desktop width')
+    page.set_viewport_size({'width': 360, 'height': 900})
+    check(page.evaluate(follows), 'BIP39 note follows the words (not right-justified) at phone width')
+    one_line = page.evaluate("() => { const n = document.getElementById('liveN'), r = n.getBoundingClientRect(); return r.height < 40 && n.scrollWidth <= n.clientWidth; }")
+    check(one_line, 'the 16-digit number stays on one line at phone width')
     page.set_viewport_size({'width': 420, 'height': 900})
 
     # clicking an older round in the feed focuses it; Update then offers the newer rounds again

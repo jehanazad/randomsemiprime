@@ -35,11 +35,11 @@
   .pill.ok { color: var(--ok); border-color: var(--ok); }
   .pill.bad { color: var(--bad); border-color: var(--bad); }
   .pill.warn { color: var(--warn); border-color: var(--warn); }
-  .N { font: 600 clamp(26px, 7vw, 44px)/1.2 var(--mono); letter-spacing: .04em; word-break: break-word; margin: 10px 0 4px; }
+  .N { font: 600 clamp(20px, 6vw, 44px)/1.2 var(--mono); letter-spacing: .04em; white-space: nowrap; margin: 10px 0 4px; }
   .words { font-size: clamp(18px, 4.5vw, 22px); font-weight: 500; margin: 4px 0 10px; line-height: 1.35; }
   .words span { margin-right: .35em; }
-  .wordsRow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
-  .wordsRow #liveWordsNote { margin: 0 0 0 auto; white-space: nowrap; font-size: 13px; }
+  #liveWordsNote { display: inline; margin: 0; white-space: nowrap; font-size: 13px; font-weight: 400; }
+  a { color: var(--accent); }
   .small { font-size: 14px; color: var(--muted); }
   button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
   button.secondary { background: none; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
@@ -89,10 +89,7 @@
   <section id="tab-live">
     <div class="card" id="liveCard">
       <div class="N" id="liveN" style="margin-top:4px">— — — —</div>
-      <div class="words wordsRow">
-        <span id="liveWords"></span>
-        <span class="small" id="liveWordsNote">(encoded as BIP39 big-endian)</span>
-      </div>
+      <div class="words"><span id="liveWords"></span> <span class="small" id="liveWordsNote">(encoded as BIP39 big-endian)</span></div>
       <div class="status">
         <span>round <b id="liveRound">—</b></span>
         <span><b id="liveTime">—</b> UTC</span>
