@@ -24,8 +24,10 @@ the browser.
    fine), or its 5 words. A round number is
    fetched from drand; a number or words are looked up in the archive to find their round. Either
    way the round's BLS signature is checked in the browser, the number is re-derived, and the
-   result says which 3-second window the number was showing in. A factor can then be checked
-   against it, as digits or words. The page never shows the factors.
+   result says which 3-second window the number was showing in. One or two factors can be
+   entered alongside, as digits or words; each is checked by division and the verdict says
+   whether it is correct, partly correct (one of two), or wrong. The same check is available
+   under the number on **Generate** via its **Verify** button. The page never shows the factors.
 3. **Numbers shown in a time range** lists every round between two times (local time or UTC),
    newest first, at most 100 rounds (5 minutes) per lookup: archive rows first, and anything the
    archive lacks fetched from drand. Each row has a **verify** button that runs the full check.

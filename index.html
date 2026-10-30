@@ -60,7 +60,7 @@
   input[type=datetime-local] { font: inherit; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); max-width: 100%; }
   select { font: inherit; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
   .result { margin-top: 8px; font-weight: 600; }
-  .result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
+  .result.ok { color: var(--ok); } .result.bad { color: var(--bad); } .result.part { color: var(--warn); } .result.none { color: var(--muted); font-weight: 400; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
   th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
   td.mono { font-family: var(--mono); font-size: 13px; }
@@ -97,7 +97,16 @@
       </div>
       <div class="row">
         <button class="primary" id="updateBtn" disabled>Update</button>
+        <button class="secondary" id="liveVerifyBtn" disabled aria-expanded="false">Verify</button>
         <span class="small">This number stays until you press Update.</span>
+      </div>
+      <div id="liveCheck" hidden>
+        <label class="small" for="liveAnswer" style="display:block;margin-top:10px">Factors to check: one or two, as 8 digits or 3 words each. The factors are never shown, only whether yours divide the number.</label>
+        <div class="row" style="margin-top:6px">
+          <input type="text" id="liveAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp" style="flex:1 1 260px">
+          <button class="primary" id="liveCheckBtn">Check</button>
+        </div>
+        <div class="result" id="liveResult"></div>
       </div>
       <div class="err small" id="liveErr"></div>
     </div>
@@ -116,8 +125,10 @@
   <section id="tab-verify" hidden>
     <div class="card">
       <label class="small" for="vQuery" style="display:block">Enter a round number, a 16-digit number, or its 5 words.</label>
+      <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits (spaces allowed) · five words" style="margin-top:6px">
+      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Factors (optional): one or two, as 8 digits or 3 words each.</label>
       <div class="row" style="margin-top:6px">
-        <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 16 digits (spaces allowed) · five words" style="flex:1 1 260px">
+        <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp" style="flex:1 1 260px">
         <button class="primary" id="vFetchBtn">Verify</button>
       </div>
       <div class="err small" id="vErr"></div>
@@ -133,9 +144,6 @@
       <div class="words" id="vrWords"></div>
       <div class="small" id="vLookupMsg"></div>
       <div class="small">randomness <code id="vrRandHex"></code></div>
-      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Check a factor of this number: one or two factors, as digits or three words each</label>
-      <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 47795929   or   accident gown swamp">
-      <div class="row"><button class="primary" id="vCheckBtn">Check</button></div>
       <div class="result" id="vResult"></div>
     </div>
     <div class="card">
@@ -175,7 +183,8 @@
       <ol>
         <li>Open <b>Generate</b>. The large number is the round that was current when the page loaded; it stays until you press <b>Update</b>, and the round line below it shows when it was published. Newer rounds keep arriving in the list below, newest first.</li>
         <li>Give the entity the number, as digits or as its 5 words. Record the round number and the time.</li>
-        <li>On <b>Verify</b>, enter the round number, the 16 digits, or the 5 words. The round is fetched and its signature checked in your browser; then enter the entity's answer, one factor or both, as digits or three words each. The page checks by division and never displays the factors.</li>
+        <li>To check an answer on the spot, press <b>Verify</b> under the number and enter one factor or both, as 8 digits or three words each. The page says whether each entered value divides the number, by division only; the factors themselves are never computed or displayed.</li>
+        <li>To check later, or to check someone else's test, go to <b>Verify</b> and enter the round number, the 16 digits, or the 5 words, plus the factors if you have them. The round is fetched and its signature checked in your browser, then the factors are checked the same way: correct, partly correct (one of two), or wrong.</li>
       </ol>
       <h3>What it does and doesn't prove</h3>
       <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester, and verifiable by anyone later from the round's signature. It does not stop a device from factoring a 16-digit number instantly, so the entity must have no device and no confederate. The factors are public in principle, since anyone with the round number and the rule can compute them; the page simply never shows them.</p>
@@ -408,16 +417,28 @@
     return { factors };
   }
 
-  // checkAnswer(N, factors) -> {ok, reason}
-  function checkAnswer(N, factors) {
+  // checkFactors(N, factors) -> {ok, each: [{f, ok}], complete, reason}
+  // Each factor is judged on its own: correct iff 1 < f < N and f divides N (checked by
+  // division only; the factors of N are never computed). With two factors, `complete` is
+  // whether their product is N, i.e. both prime factors were given. Nothing is revealed
+  // beyond whether each entered value divides N.
+  function checkFactors(N, factors) {
+    const each = factors.map(f => ({ f, ok: f > 1n && f < N && N % f === 0n }));
+    const good = each.filter(e => e.ok).length;
     if (factors.length === 1) {
-      const f = factors[0];
-      if (f <= 1n || f >= N) return { ok: false, reason: 'factor must be between 1 and N' };
-      return N % f === 0n ? { ok: true } : { ok: false, reason: 'does not divide N' };
+      return each[0].ok ? { ok: true, each, complete: false }
+                        : { ok: false, each, complete: false, reason: 'does not divide N' };
     }
-    const [a, b] = factors;
-    if (a <= 1n || b <= 1n) return { ok: false, reason: 'factors must be greater than 1' };
-    return a * b === N ? { ok: true } : { ok: false, reason: 'product is not N' };
+    const complete = factors[0] * factors[1] === N;
+    if (complete) return { ok: true, each, complete };
+    if (good === 2) return { ok: false, each, complete, reason: 'both divide N but their product is not N (the same factor twice)' };
+    if (good === 1) return { ok: false, each, complete, reason: 'one factor divides N, the other does not' };
+    return { ok: false, each, complete, reason: 'neither divides N' };
+  }
+  // checkAnswer(N, factors) -> {ok, reason}: one factor must divide N; two must multiply to N.
+  function checkAnswer(N, factors) {
+    const r = checkFactors(N, factors);
+    return r.ok ? { ok: true } : { ok: false, reason: r.reason };
   }
 
   function groupDigits(s, n) {      // "1234567890123456" -> "1234 5678 9012 3456"
@@ -431,7 +452,7 @@
     isPrime, nextPrime, derivePrime, deriveFactors, deriveN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,
-    parseAnswer, checkAnswer, groupDigits, hexToBytes, bytesToHex,
+    parseAnswer, checkAnswer, checkFactors, groupDigits, hexToBytes, bytesToHex,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -494,6 +515,8 @@
     setPill($('liveSig'), 'ok', 'drand sig ✓');
     $('liveN').textContent = SP.groupDigits(b.N.toString(), 4);
     renderWords($('liveWords'), SP.encodeN(b.N));
+    $('liveVerifyBtn').disabled = false;
+    $('liveAnswer').value = ''; $('liveResult').textContent = ''; $('liveResult').className = 'result';   // a new number: old verdict no longer applies
     renderUpdateBtn();
     renderFeed();
   }
@@ -533,6 +556,14 @@
     }
   }
   $('updateBtn').addEventListener('click', () => { if (latest) { focused = latest; renderFocused(); } });
+  $('liveVerifyBtn').addEventListener('click', () => {
+    const open = $('liveCheck').hidden;
+    $('liveCheck').hidden = !open;
+    $('liveVerifyBtn').setAttribute('aria-expanded', String(open));
+    if (open) $('liveAnswer').focus();
+  });
+  $('liveCheckBtn').addEventListener('click', () => { if (focused) renderVerdict($('liveResult'), focused.N, $('liveAnswer').value); });
+  $('liveAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('liveCheckBtn').click(); });
   // Clicking a round in the feed makes it the focused round.
   $('feedList').addEventListener('click', e => {
     const li = e.target.closest('li[data-round]');
@@ -549,11 +580,25 @@
   }
   tick().then(schedule);
 
-  // ---------- answer checking (used by the Verify tab) ----------
-  function doCheck(N, text) {
-    const parsed = SP.parseAnswer(text);           // throws on malformed input
-    const res = SP.checkAnswer(N, parsed.factors);
-    return { factors: parsed.factors, ...res };
+  // ---------- factor checking (Generate card and Verify tab) ----------
+  // Writes a verdict for `text` (one or two factors) against N into `out`. Only division is
+  // used; the factors of N are never computed or shown. Empty text is reported as such.
+  function renderVerdict(out, N, text) {
+    if (!text.trim()) { out.className = 'result none'; out.textContent = 'No factors entered.'; return; }
+    let factors;
+    try { factors = SP.parseAnswer(text).factors; } catch (e) { out.className = 'result bad'; out.textContent = e.message; return; }
+    const r = SP.checkFactors(N, factors);
+    const [a, b] = r.each;
+    const Ns = SP.groupDigits(N.toString(), 4);
+    if (factors.length === 1) {
+      out.className = 'result ' + (a.ok ? 'ok' : 'bad');
+      out.textContent = a.ok ? 'Correct — ' + a.f + ' is a factor of ' + Ns + '.' : 'Wrong — ' + a.f + ' is not a factor of ' + Ns + '.';
+      return;
+    }
+    if (r.complete) { out.className = 'result ok'; out.textContent = 'Correct — ' + a.f + ' × ' + b.f + ' = ' + Ns + '. Both factors are right.'; return; }
+    if (a.ok && b.ok) { out.className = 'result part'; out.textContent = 'Partly correct — ' + a.f + ' is a factor, but it was given twice; the other factor is still missing.'; return; }
+    if (a.ok || b.ok) { out.className = 'result part'; out.textContent = 'Partly correct — ' + (a.ok ? a.f : b.f) + ' is a factor; ' + (a.ok ? b.f : a.f) + ' is not.'; return; }
+    out.className = 'result bad'; out.textContent = 'Wrong — neither ' + a.f + ' nor ' + b.f + ' is a factor of ' + Ns + '.';
   }
 
   // ---------- archive API (same origin; absent when the page is opened as a file) ----------
@@ -591,9 +636,7 @@
   }
 
   // ---------- verify tab ----------
-  let ver = null;
   function showVerified(b, note) {
-    ver = b;
     $('vrRound').textContent = b.round;
     $('vrTime').textContent = utc(b.time);
     setPill($('vrSig'), b.sigOk ? 'ok' : 'bad', b.sigOk ? 'BLS signature valid' : 'BLS signature INVALID');
@@ -602,8 +645,7 @@
     renderWords($('vrWords'), SP.encodeN(b.N));
     $('vrRandHex').textContent = b.randomness;
     $('vLookupMsg').textContent = note || '';
-    $('vResult').textContent = ''; $('vResult').className = 'result';
-    $('vAnswer').value = '';
+    renderVerdict($('vResult'), b.N, $('vAnswer').value);
     $('vCard').hidden = false; $('vErr').textContent = '';
   }
   function roundNote(b, how) {
@@ -664,18 +706,12 @@
     }
   });
   $('vQuery').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
+  $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
     verifySeq++;
     try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.')); }
     catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
-  $('vCheckBtn').addEventListener('click', () => {
-    if (!ver) return;
-    const out = $('vResult');
-    try { const r = doCheck(ver.N, $('vAnswer').value); out.className = 'result ' + (r.ok ? 'ok' : 'bad'); out.textContent = r.ok ? 'Correct — ' + r.factors.join(' × ') : 'Wrong — ' + r.reason; }
-    catch (e) { out.className = 'result bad'; out.textContent = e.message; }
-  });
-  $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vCheckBtn').click(); });
 
   // ---------- time range ----------
   // Rounds are listed from the archive, and any it lacks are fetched from the relays. Listed rows are

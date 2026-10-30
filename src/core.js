@@ -192,16 +192,28 @@
     return { factors };
   }
 
-  // checkAnswer(N, factors) -> {ok, reason}
-  function checkAnswer(N, factors) {
+  // checkFactors(N, factors) -> {ok, each: [{f, ok}], complete, reason}
+  // Each factor is judged on its own: correct iff 1 < f < N and f divides N (checked by
+  // division only; the factors of N are never computed). With two factors, `complete` is
+  // whether their product is N, i.e. both prime factors were given. Nothing is revealed
+  // beyond whether each entered value divides N.
+  function checkFactors(N, factors) {
+    const each = factors.map(f => ({ f, ok: f > 1n && f < N && N % f === 0n }));
+    const good = each.filter(e => e.ok).length;
     if (factors.length === 1) {
-      const f = factors[0];
-      if (f <= 1n || f >= N) return { ok: false, reason: 'factor must be between 1 and N' };
-      return N % f === 0n ? { ok: true } : { ok: false, reason: 'does not divide N' };
+      return each[0].ok ? { ok: true, each, complete: false }
+                        : { ok: false, each, complete: false, reason: 'does not divide N' };
     }
-    const [a, b] = factors;
-    if (a <= 1n || b <= 1n) return { ok: false, reason: 'factors must be greater than 1' };
-    return a * b === N ? { ok: true } : { ok: false, reason: 'product is not N' };
+    const complete = factors[0] * factors[1] === N;
+    if (complete) return { ok: true, each, complete };
+    if (good === 2) return { ok: false, each, complete, reason: 'both divide N but their product is not N (the same factor twice)' };
+    if (good === 1) return { ok: false, each, complete, reason: 'one factor divides N, the other does not' };
+    return { ok: false, each, complete, reason: 'neither divides N' };
+  }
+  // checkAnswer(N, factors) -> {ok, reason}: one factor must divide N; two must multiply to N.
+  function checkAnswer(N, factors) {
+    const r = checkFactors(N, factors);
+    return r.ok ? { ok: true } : { ok: false, reason: r.reason };
   }
 
   function groupDigits(s, n) {      // "1234567890123456" -> "1234 5678 9012 3456"
@@ -215,6 +227,6 @@
     isPrime, nextPrime, derivePrime, deriveFactors, deriveN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,
-    parseAnswer, checkAnswer, groupDigits, hexToBytes, bytesToHex,
+    parseAnswer, checkAnswer, checkFactors, groupDigits, hexToBytes, bytesToHex,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
