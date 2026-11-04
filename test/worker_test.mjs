@@ -58,30 +58,15 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
 {
   const rows = new Map();
   const meta = new Map();
-  let rowsRead = 0;
   // Just enough of the D1 API for the statements the worker issues.
   const mem = {
     prepare: sql => {
       const mk = a => ({
         run: async () => {
           if (/INTO meta/.test(sql)) meta.set(a[0], a[1]);
-          else if (/^UPDATE rounds/.test(sql)) rows.get(a[1]).n = a[0];
           else rows.set(a[0], { round: a[0], n: a[1], randomness: a[2], signature: a[3] });
         },
-        first: async () => {
-          if (/FROM meta/.test(sql)) return meta.has(a[0]) ? { v: meta.get(a[0]) } : null;
-          const ks = [...rows.keys()]; return { first: ks.length ? Math.min(...ks) : null, last: ks.length ? Math.max(...ks) : null, count: ks.length };
-        },
-        all: async () => {   // SELECT round, randomness FROM rounds WHERE round > ?1 AND length(n) != ?2 ORDER BY round LIMIT ?3
-          const out = [];
-          for (const r of [...rows.values()].sort((x, y) => x.round - y.round)) {
-            if (r.round <= a[0]) continue;
-            rowsRead++;
-            if (r.n.length !== a[1]) out.push({ round: r.round, randomness: r.randomness });
-            if (out.length >= a[2]) break;
-          }
-          return { results: out };
-        },
+        first: async () => { const ks = [...rows.keys()]; return { first: ks.length ? Math.min(...ks) : null, last: ks.length ? Math.max(...ks) : null, count: ks.length }; },
       });
       return { bind: (...a) => mk(a), ...mk([]) };   // unbound statements too
     },
@@ -92,7 +77,6 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
   const cur = SP.roundAt(now - 1);
   let r = await archiveTick(env, now);
   check(r.forward === 20 && r.backward === 10 && attempts === 30, `first tick fills 20 forward + 10 backward with 30 attempts (${r.forward}+${r.backward}, ${attempts})`);
-  check(r.migrated === 0 && !meta.has('migrate'), 'no migration without MIGRATE_BATCH');
   check(rows.has(cur) && rows.has(cur - 29) && rows.size === 30, 'archive covers current-29 .. current');
   check(JSON.parse(meta.get('tick_started')).budget === 30, 'tick records its start');
   r = await archiveTick(env, now + 6);       // two new rounds exist now
@@ -116,29 +100,6 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
   r = await archiveTick(env, now);
   check(r.forward === 0 && r.backward === 0 && rows.size === 0, 'empty archive with a failing first round stays empty rather than anchoring backfill');
   failing.clear();
-  // ---- migration: rows stored under the old 16-digit spec are re-derived from their randomness ----
-  const old = Object.fromEntries(VEC.rounds.map(v => [v.round, { 1: '8766449459018651', 20000000: '2842566290086427', 33470004: '3307786713929837' }[v.round]]));
-  for (const v of VEC.rounds) rows.set(v.round, { round: v.round, n: old[v.round], randomness: v.randomness, signature: v.signature });
-  for (let r = 100; r < 150; r++) { const f = fakeRound(r); rows.set(r, { round: r, n: '1'.repeat(16), randomness: f.randomness, signature: f.signature }); }
-  const stale = () => [...rows.values()].filter(r => r.n.length !== 10).length;
-  check(stale() === 53, 'archive seeded with 53 old-format rows');
-  const env3 = { DB: mem, DRAND_RELAYS: MOCK, SUBREQUEST_BUDGET: '30', MIGRATE_BATCH: '25' };
-  rowsRead = 0;
-  r = await archiveTick(env3, now);
-  check(r.migrated === 25 && stale() === 28 && rowsRead === 25, `a tick re-derives MIGRATE_BATCH rows, reading only those (${r.migrated} migrated, ${rowsRead} read)`);
-  let st = JSON.parse(meta.get('migrate'));
-  check(st.digits === 10 && st.cursor === 123 && st.done === false, `cursor advances past the rows rewritten (${JSON.stringify(st)})`);
-  check(rows.get(1).n === expectN[1] && rows.get(100).n === SP.deriveN(rows.get(100).randomness).toString(), 'rewritten rows carry the 10-digit N of the current spec');
-  r = await archiveTick(env3, now); r = await archiveTick(env3, now);
-  st = JSON.parse(meta.get('migrate'));
-  check(r.migrated === 3 && stale() === 0 && st.done === true, `the walk ends with a short batch and is marked done (${r.migrated}, ${JSON.stringify(st)})`);
-  rowsRead = 0;
-  r = await archiveTick(env3, now);
-  check(r.migrated === 0 && rowsRead === 0, 'a finished migration reads nothing');
-  rows.set(100, { ...rows.get(100), n: '1'.repeat(16) });
-  r = await archiveTick(env3, now);
-  check(stale() === 1, 'rows behind a finished cursor are not revisited (a size change restarts the walk by key)');
-  rows.delete(100);
 }
 
 // ---- integration: wrangler dev (local D1) ----

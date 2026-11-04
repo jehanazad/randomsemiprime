@@ -3,7 +3,7 @@
 -- Apply locally:   npx wrangler d1 execute randomsemiprime-archive --local --file schema.sql
 CREATE TABLE IF NOT EXISTS rounds (
   round      INTEGER PRIMARY KEY,   -- quicknet round number
-  n          TEXT    NOT NULL,      -- N as text, 10 digits under SPEC v2 (rows of another length are re-derived by the Worker)
+  n          TEXT    NOT NULL,      -- N as text, 10 digits under SPEC v2
   randomness TEXT    NOT NULL,      -- 32 bytes hex
   signature  TEXT    NOT NULL       -- 48 bytes hex, verifiable against the chain public key
 );

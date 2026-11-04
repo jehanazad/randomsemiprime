@@ -1,17 +1,15 @@
 // Cloudflare Worker: serves index.html as a static asset and keeps an archive of rounds in D1.
 // Requests on the old domain (randomsemiprime.com) are redirected permanently to primetotem.com.
 //
-//   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error, migrate}}
+//   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error}}
 //   GET /api/n/<10 digits>     -> {n, rounds: [{round, n, randomness, signature}, ...]} newest first, or 404
 //   GET /api/round/<round>     -> {round, n, randomness, signature} or 404
 //   GET /api/range?from=&to=   -> {rounds: [...]} for a round range, newest first, at most RANGE_LIMIT
 //
-// A cron trigger runs archiveTick every minute: it re-derives up to MIGRATE_BATCH rows whose n was
-// stored under an earlier spec (recognised by its digit count; no relay request is needed, since
-// every row keeps its randomness), records rounds newer than the archive's last round, then
-// backfills older rounds. SUBREQUEST_BUDGET bounds the relay requests one run may make, every
-// attempt including failovers (the free plan allows 50 external subrequests per invocation; D1
-// calls count separately). Each tick notes when it started and how it ended in the meta table.
+// A cron trigger runs archiveTick every minute: it records rounds newer than the archive's last
+// round, then backfills older rounds. SUBREQUEST_BUDGET bounds the relay requests one run may make,
+// every attempt including failovers (the free plan allows 50 external subrequests per invocation;
+// D1 calls count separately). Each tick notes when it started and how it ended in the meta table.
 // Rows only map N to a round; the page verifies each round's BLS signature in the browser.
 import { sha256 } from '@noble/hashes/sha2.js';
 import '../src/core.js';           // defines globalThis.SP (reads globalThis.__noble lazily)
@@ -85,25 +83,6 @@ async function insertRows(db, rows) {
   await db.batch(rows.map(r => stmt.bind(r.round, r.n, r.randomness, r.signature)));
 }
 
-// Re-derive n for up to `batch` rows stored under an earlier spec, walking up from a cursor kept
-// in meta so each run reads only the rows it rewrites. A short read means the walk is over; the
-// cursor and `done` are keyed by digit count, so a later change of size starts a new walk.
-// Returns {migrated, done, cursor}.
-const MIGRATE_KEY = 'migrate';
-async function migrateRows(db, batch) {
-  let state = { digits: DIGITS, cursor: 0, done: false };
-  const row = await db.prepare('SELECT v FROM meta WHERE k = ?1').bind(MIGRATE_KEY).first();
-  if (row) { try { const v = JSON.parse(row.v); if (v.digits === DIGITS) state = v; } catch (e) { /* start over */ } }
-  if (state.done || batch <= 0) return { migrated: 0, done: state.done, cursor: state.cursor };
-  const { results } = await db.prepare('SELECT round, randomness FROM rounds WHERE round > ?1 AND length(n) != ?2 ORDER BY round LIMIT ?3')
-    .bind(state.cursor, DIGITS, batch).all();
-  const stmt = db.prepare('UPDATE rounds SET n = ?1 WHERE round = ?2');
-  const updates = results.map(r => stmt.bind(SP.deriveN(String(r.randomness), DIGITS).toString(), r.round));
-  const next = { digits: DIGITS, cursor: results.length ? results[results.length - 1].round : state.cursor, done: results.length < batch };
-  await db.batch(updates.concat([db.prepare('INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)').bind(MIGRATE_KEY, JSON.stringify(next))]));
-  return { migrated: results.length, ...next };
-}
-
 // Fetch the given rounds (in order), PARALLEL at a time, within the budget and the deadline; stop at
 // the first failure so the next run retries from there and the archive never develops holes.
 // Returns the rows obtained.
@@ -128,9 +107,8 @@ export async function archiveTick(env, now = Math.floor(Date.now() / 1000)) {
   const budget = { left: Math.max(1, Number(env.SUBREQUEST_BUDGET) || 45) };   // relay attempts this run
   const deadline = Date.now() + TICK_DEADLINE_MS;
   const current = SP.roundAt(now - 1);                 // one second of slack for relay lag
-  if (current < 1) return { migrated: 0, forward: 0, backward: 0 };
+  if (current < 1) return { forward: 0, backward: 0 };
   await setMeta(env.DB, 'tick_started', { at: now, budget: budget.left });
-  const migrated = (await migrateRows(env.DB, Number(env.MIGRATE_BATCH) || 0)).migrated;
   const { first, last } = await bounds(env.DB);
   // Forward: everything newer than the archive. An empty archive starts a little behind "now".
   const fwdStart = last ? last + 1 : Math.max(1, current - 19);
@@ -141,12 +119,12 @@ export async function archiveTick(env, now = Math.floor(Date.now() / 1000)) {
   // Backward: below the archive's first round, or below what was just inserted into an empty
   // archive. Nothing inserted into an empty archive means nothing to anchor to, so stop.
   const anchor = first ?? (fwdRows.length ? fwdRows[0].round : null);
-  if (anchor === null) return { migrated, forward: fwdRows.length, backward: 0 };
+  if (anchor === null) return { forward: fwdRows.length, backward: 0 };
   const bwd = [];
   for (let r = anchor - 1; r >= 1 && bwd.length < budget.left; r--) bwd.push(r);
   const bwdRows = await collect(env, bwd, budget, deadline);
   await insertRows(env.DB, bwdRows);
-  return { migrated, forward: fwdRows.length, backward: bwdRows.length };
+  return { forward: fwdRows.length, backward: bwdRows.length };
 }
 // The scheduled entry point: runs a tick and records how it ended.
 async function runTick(env) {
@@ -154,7 +132,7 @@ async function runTick(env) {
   try {
     const r = await archiveTick(env);
     await setMeta(env.DB, 'tick_finished', { at: Math.floor(Date.now() / 1000), ms: Date.now() - started, ...r });
-    console.log('archive: ' + r.migrated + ' re-derived, +' + r.forward + ' forward, +' + r.backward + ' backward');
+    console.log('archive: +' + r.forward + ' forward, +' + r.backward + ' backward');
   } catch (e) {
     console.log('archive tick failed: ' + (e.message || e));
     try { await setMeta(env.DB, 'tick_error', { at: Math.floor(Date.now() / 1000), message: String(e && e.message || e) }); } catch (e2) { /* nothing left to do */ }
@@ -175,7 +153,7 @@ async function api(url, env) {
   }
   if ((m = new RegExp('^/api/n/(\\d{' + DIGITS + '})$').exec(p))) {
     // Distinct rounds can produce the same N (expected now and then; see README). The answer is
-    // cached briefly, not immutably: backfill or migration can add an older round later.
+    // cached briefly, not immutably: backfill can add an older round later.
     const { results } = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE n = ?1 ORDER BY round DESC').bind(m[1]).all();
     return results.length ? json({ n: m[1], rounds: results }, 200, 'public, max-age=300') : json({ error: 'not in archive' }, 404);
   }

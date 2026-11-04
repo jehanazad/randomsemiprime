@@ -59,15 +59,6 @@ count against a separate, higher limit and are not budgeted.
 Each tick records when it started and how it ended in the `meta` table, and `/api/status` (and
 the last line of the How it Works tab) report it, so the cron's health is visible without log access.
 
-When the derivation or the displayed size changes, the rows already stored are wrong but their
-randomness is not: each tick first re-derives `n` for up to `MIGRATE_BATCH` rows whose stored
-`n` has the wrong number of digits, walking up from a cursor kept in `meta` so only those rows
-are read, and marks the walk done when it runs out. No relay requests are used, but each row
-is a D1 write: the free plan allows 100,000 row writes a day, of which new and backfilled rounds
-use about 65,000, so the default is 20 rows a minute (about 29,000 a day); on a paid plan set
-it to 2000 or so. Until a row is re-derived, a lookup by its new number misses it; lookups by
-round and by time range are unaffected, since the page re-derives from the randomness.
-
 API: `GET /api/status`, `GET /api/n/<10 digits>` (`{n, rounds: [...]}`, newest first),
 `GET /api/round/<round>`, `GET /api/range?from=<round>&to=<round>` (at most 100 rounds).
 Schema: `schema.sql`.

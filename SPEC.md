@@ -145,10 +145,8 @@ An answer is one or two factors, each given either as a decimal integer or as `F
 ## 6. Archive
 
 A row of the archive maps a round to its `N` of the displayed size, stored as text, together
-with the round's randomness and signature. A row whose `N` has a different number of digits
-was stored under another size or spec version; it is re-derived from its randomness
-(`worker/index.mjs`, `migrateRows`). Readers MUST re-derive `N` from the randomness rather than
-trust the stored text, as the page does.
+with the round's randomness and signature. Readers MUST re-derive `N` from the randomness
+rather than trust the stored text, as the page does.
 
 ## 7. Test vectors
 

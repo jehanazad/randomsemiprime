@@ -69,7 +69,7 @@ with sync_playwright() as p:
         def js(body, status=200): route.fulfill(status=status, content_type='application/json', body=json.dumps(body))
         if path == 'status':
             return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004),
-                       'tick': {'started': {'at': 1793250000, 'budget': 45}, 'finished': {'at': 1793250004, 'ms': 4000, 'migrated': 20, 'forward': 20, 'backward': 25}}})
+                       'tick': {'started': {'at': 1793250000, 'budget': 45}, 'finished': {'at': 1793250004, 'ms': 4000, 'forward': 20, 'backward': 25}}})
         if path.startswith('n/'):
             for r, n in N_OF.items():
                 if n == path[2:]:
@@ -173,7 +173,7 @@ with sync_playwright() as p:
     # verify tab: by round number
     page.click('nav [data-tab=about]')
     page.wait_for_function("document.getElementById('archiveStatus').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
-    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#archiveStatus') and page.inner_text('#archiveStatus').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older, 20 re-derived).'), 'archive coverage and last run are shown on How it Works: ' + page.inner_text('#archiveStatus'))
+    check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#archiveStatus') and page.inner_text('#archiveStatus').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older).'), 'archive coverage and last run are shown on How it Works: ' + page.inner_text('#archiveStatus'))
     page.click('nav [data-tab=verify]')
     check(page.inner_text('#tab-verify label[for=vQuery]') == 'Enter a round number, a 10-digit number, or its 3 words.', 'verify prompt is one sentence')
     check(not page.locator('#vCheckBtn').count() and page.is_visible('#vAnswer'), 'verify form has the factor field and a single Verify button')
