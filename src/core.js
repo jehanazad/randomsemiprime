@@ -1,5 +1,5 @@
 /* beacon-semiprime core — derivation, encoding, checking.
- * Spec: SPEC.md (v1). No DOM, no network. Requires globalThis.__noble.sha256
+ * Spec: SPEC.md (v2). No DOM, no network. Requires globalThis.__noble.sha256
  * (Uint8Array -> Uint8Array) and globalThis.BIP39_WORDS (2048 strings).
  */
 (function (root) {
@@ -21,14 +21,45 @@
     ],
   };
 
-  // ---- Derivation constants (SPEC.md §3) ----
-  const LOW = 31622777n;            // ceil(sqrt(10) * 10^7): p*q >= 10^15
-  const HIGH = 100000000n;          // 10^8: factors are 8 digits
-  const RANGE = HIGH - LOW;         // 68377223
-  const LIMIT = (2n ** 32n / RANGE) * RANGE; // 4239387826, rejection threshold
+  // ---- Sizes (SPEC.md §2) ----
+  // A size is the number of decimal digits of N; both factors have half as many. Every size is
+  // derived from the same seed independently (the tag carries the digit count), so one round can
+  // yield a number of each size. The page shows DEFAULT_DIGITS only.
   const MAX_CTR = 256;
+  const MIN_FERMAT = 1000n;         // Fermat's method must need at least this many iterations (§3.3)
 
-  // Primes below 10^4 — trial division with these is exact for n < 10^8.
+  function isqrt(n) {               // floor(sqrt(n)) for BigInt n >= 0
+    if (n < 2n) return n;
+    let x = BigInt(Math.floor(Math.sqrt(Number(n))));
+    while (x * x > n) x--;
+    while ((x + 1n) * (x + 1n) <= n) x++;
+    return x;
+  }
+  function makeSize(digits, words, factorWords, groups) {
+    if (digits % 2 || digits < 2 || digits > 16) throw new Error('digits must be even and at most 16');
+    const fd = digits / 2;
+    const HIGH = 10n ** BigInt(fd);                         // factors are strictly below this
+    const LOW = isqrt(10n ** BigInt(digits - 1) - 1n) + 1n; // ceil(sqrt(10^(digits-1))): p*q >= 10^(digits-1)
+    const RANGE = HIGH - LOW;
+    const LIMIT = (2n ** 32n / RANGE) * RANGE;              // rejection threshold for the 32-bit sample
+    const WORD_MAX = 1n << BigInt(11 * words);              // N must fit in `words` words
+    if (WORD_MAX <= 10n ** BigInt(digits - 1)) throw new Error('word count too small for ' + digits + ' digits');
+    if ((1n << BigInt(11 * factorWords)) < HIGH) throw new Error('factor word count too small for ' + fd + '-digit factors');
+    if (groups.reduce((a, b) => a + b, 0) !== digits) throw new Error('digit groups must add up to ' + digits);
+    return { digits, factorDigits: fd, words, factorWords, groups, LOW, HIGH, RANGE, LIMIT, WORD_MAX };
+  }
+  const SIZES = {
+    10: makeSize(10, 3, 2, [3, 3, 4]),     // 5-digit factors; N < 2^33 so it fits 3 words; a factor fits 2
+    16: makeSize(16, 5, 3, [4, 4, 4, 4]),  // 8-digit factors; N < 10^16 < 2^55 always fits 5 words; a factor fits 3
+  };
+  const DEFAULT_DIGITS = 10;
+  function size(digits) {
+    const s = SIZES[digits === undefined ? DEFAULT_DIGITS : digits];
+    if (!s) throw new Error('unsupported size: ' + digits + ' digits');
+    return s;
+  }
+
+  // Primes below 10^4 — trial division with these is exact for n < 10^8, i.e. for every factor size.
   const SMALL_PRIMES = (function () {
     const n = 10000, s = new Uint8Array(n + 1), out = [];
     for (let i = 2; i <= n; i++) {
@@ -76,33 +107,42 @@
     return out;
   }
 
-  // derivePrime(seed, tag, exclude) — SPEC.md §3.2
-  function derivePrime(seed, tag, exclude) {
+  // farApart(p, q): Fermat's method, started at ceil(sqrt(pq)), reaches (p+q)/2 after
+  // (p+q)/2 - sqrt(pq) iterations; require at least MIN_FERMAT of them (SPEC.md §3.3).
+  // (p+q)/2 - sqrt(pq) >= S  <=>  p+q-2S >= 0 and (p+q-2S)^2 >= 4pq, exactly in integers.
+  function farApart(p, q) {
+    const s = p + q - 2n * MIN_FERMAT;
+    return s >= 0n && s * s >= 4n * p * q;
+  }
+
+  // derivePrime(seed, tag, sz, accept) — SPEC.md §3.2. `accept(f)` may reject a candidate prime.
+  function derivePrime(seed, tag, sz, accept) {
     const tagBytes = new TextEncoder().encode(tag);
     for (let ctr = 0; ctr < MAX_CTR; ctr++) {
       const h = sha256(concat(seed, tagBytes, Uint8Array.of(ctr)));
       const x = (BigInt(h[0]) << 24n) | (BigInt(h[1]) << 16n) | (BigInt(h[2]) << 8n) | BigInt(h[3]);
-      if (x >= LIMIT) continue;
-      const p = nextPrime(LOW + (x % RANGE));
-      if (p >= HIGH) continue;
-      if (exclude !== null && p === exclude) continue;
+      if (x >= sz.LIMIT) continue;
+      const p = nextPrime(sz.LOW + (x % sz.RANGE));
+      if (p >= sz.HIGH) continue;
+      if (!accept(p)) continue;
       return p;
     }
     throw new Error('derivePrime: counter exhausted');
   }
 
-  // deriveFactors(randomnessHex) -> {p, q}   (both BigInt, p from tag "p", q from tag "q")
-  function deriveFactors(randomnessHex) {
+  // deriveFactors(randomnessHex, digits) -> {p, q}   (both BigInt; p from tag "p<digits>", q from "q<digits>")
+  function deriveFactors(randomnessHex, digits) {
+    const sz = size(digits);
     const seed = hexToBytes(randomnessHex);
     if (seed.length !== 32) throw new Error('randomness must be 32 bytes');
-    const p = derivePrime(seed, 'p', null);
-    const q = derivePrime(seed, 'q', p);
+    const p = derivePrime(seed, 'p' + sz.digits, sz, () => true);
+    const q = derivePrime(seed, 'q' + sz.digits, sz, f => f !== p && p * f < sz.WORD_MAX && farApart(p, f));
     return { p, q };
   }
 
-  // deriveN(randomnessHex) -> BigInt. Factors are not retained.
-  function deriveN(randomnessHex) {
-    const f = deriveFactors(randomnessHex);
+  // deriveN(randomnessHex, digits) -> BigInt. Factors are not retained.
+  function deriveN(randomnessHex, digits) {
+    const f = deriveFactors(randomnessHex, digits);
     return f.p * f.q;
   }
 
@@ -143,8 +183,8 @@
     for (let i = count - 1; i >= 0; i--) out.push(words()[Number((n >> BigInt(11 * i)) & 2047n)]);
     return out;
   }
-  function encodeN(n) { return encodeWords(n, 5); }       // 16-digit N < 2^54 -> 5 words
-  function encodeFactor(f) { return encodeWords(f, 3); }  // 8-digit factor < 2^27 -> 3 words
+  function encodeN(n, digits) { return encodeWords(n, size(digits).words); }
+  function encodeFactor(f, digits) { return encodeWords(f, size(digits).factorWords); }
 
   // Resolve a typed word to its index: exact match, else unique prefix of >= 4 letters.
   function wordToIndex(w) {
@@ -168,18 +208,20 @@
   }
 
   // ---- Answer parsing / checking (SPEC.md §5) ----
-  // Input: free text. Digits-only tokens are decimal factors. Word tokens are grouped in threes.
-  // Separators: whitespace , ; × * and an x between digits or standing alone (never inside a
-  // word such as "expose"). Returns {factors: BigInt[]} or throws with a readable message.
-  function parseAnswer(text) {
+  // Input: free text. Digits-only tokens are decimal factors. Word tokens are grouped by the
+  // size's factor word count. Separators: whitespace , ; × * and an x between digits or standing
+  // alone (never inside a word such as "expose"). Returns {factors: BigInt[]} or throws with a
+  // readable message.
+  function parseAnswer(text, digits) {
+    const fw = size(digits).factorWords;
     const tokens = text.trim().replace(/(\d)x(?=\d)/gi, '$1 ').split(/[\s,;×*]+/).filter(t => t && !/^x$/i.test(t));
     if (!tokens.length) throw new Error('enter one or two factors');
     const factors = [];
     let wordBuf = [];
     const flush = () => {
       if (!wordBuf.length) return;
-      if (wordBuf.length % 3) throw new Error('word factors are 3 words each (got ' + wordBuf.length + ' words)');
-      for (let i = 0; i < wordBuf.length; i += 3) factors.push(decodeWords(wordBuf.slice(i, i + 3)));
+      if (wordBuf.length % fw) throw new Error('word factors are ' + fw + ' words each (got ' + wordBuf.length + ' words)');
+      for (let i = 0; i < wordBuf.length; i += fw) factors.push(decodeWords(wordBuf.slice(i, i + fw)));
       wordBuf = [];
     };
     for (const t of tokens) {
@@ -216,17 +258,19 @@
     return r.ok ? { ok: true } : { ok: false, reason: r.reason };
   }
 
-  function groupDigits(s, n) {      // "1234567890123456" -> "1234 5678 9012 3456"
-    const out = [];
-    for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n));
+  // formatN(N, digits): the digits in the size's groups, e.g. 1234567890 -> "123 456 7890"
+  function formatN(N, digits) {
+    const s = N.toString(), out = [];
+    let i = 0;
+    for (const g of size(digits).groups) { out.push(s.slice(i, i + g)); i += g; }
     return out.join(' ');
   }
 
   root.SP = {
-    CHAIN, LOW, HIGH, RANGE, LIMIT, SMALL_PRIMES,
-    isPrime, nextPrime, derivePrime, deriveFactors, deriveN,
+    CHAIN, SIZES, DEFAULT_DIGITS, MIN_FERMAT, SMALL_PRIMES, size,
+    isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,
-    parseAnswer, checkAnswer, checkFactors, groupDigits, hexToBytes, bytesToHex,
+    parseAnswer, checkAnswer, checkFactors, formatN, hexToBytes, bytesToHex,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

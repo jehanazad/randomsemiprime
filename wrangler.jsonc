@@ -20,7 +20,11 @@
     // Relay requests per cron run (every attempt counts): new rounds first, the rest backfills
     // older ones. The Workers free plan allows 50 external subrequests per invocation; paid
     // plans allow 10,000. CPU per cron run is 10 ms on the free plan, so keep this modest there.
-    "SUBREQUEST_BUDGET": "45"
+    "SUBREQUEST_BUDGET": "45",
+    // Rows per cron run whose stored n is re-derived after a spec change (no relay requests; each
+    // is one D1 row write). D1 free allows 100,000 row writes per day, and new and backfilled rounds
+    // already use about 65,000, so keep this near 20 there; on a paid plan 2000 is fine.
+    "MIGRATE_BATCH": "20"
   },
   // primetotem.com is the site; the other hosts are kept so the Worker can redirect them to it.
   "routes": [

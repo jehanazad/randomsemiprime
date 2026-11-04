@@ -1,7 +1,7 @@
 {
   "name": "beacon-semiprime",
   "version": "1.0.0",
-  "description": "Fresh 16-digit semiprimes derived from the drand quicknet beacon, verifiable by anyone",
+  "description": "Fresh 10-digit semiprimes derived from the drand quicknet beacon, verifiable by anyone",
   "license": "MIT",
   "private": true,
   "type": "module",
