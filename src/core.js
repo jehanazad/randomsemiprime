@@ -130,21 +130,35 @@
     throw new Error('derivePrime: counter exhausted');
   }
 
-  // deriveFactors(randomnessHex, digits) -> {p, q}   (both BigInt; p from tag "p<digits>", q from "q<digits>")
-  function deriveFactors(randomnessHex, digits) {
+  // deriveFactors(seedHex, digits) -> {p, q}   (both BigInt; p from tag "p<digits>", q from "q<digits>")
+  // The seed is the round's randomness for the public number, or personalSeed() for a personal one.
+  function deriveFactors(seedHex, digits) {
     const sz = size(digits);
-    const seed = hexToBytes(randomnessHex);
-    if (seed.length !== 32) throw new Error('randomness must be 32 bytes');
+    const seed = hexToBytes(seedHex);
+    if (seed.length !== 32) throw new Error('seed must be 32 bytes');
     const p = derivePrime(seed, 'p' + sz.digits, sz, () => true);
     const q = derivePrime(seed, 'q' + sz.digits, sz, f => f !== p && p * f < sz.WORD_MAX && farApart(p, f));
     return { p, q };
   }
 
-  // deriveN(randomnessHex, digits) -> BigInt. Factors are not retained.
-  function deriveN(randomnessHex, digits) {
-    const f = deriveFactors(randomnessHex, digits);
+  // deriveN(seedHex, digits) -> BigInt. Factors are not retained.
+  function deriveN(seedHex, digits) {
+    const f = deriveFactors(seedHex, digits);
     return f.p * f.q;
   }
+
+  // ---- Personal numbers (SPEC.md §8) ----
+  // personalSeed(randomnessHex, passphrase) -> hex of SHA-256(domain ‖ randomness ‖ UTF-8(NFC(passphrase))).
+  // The domain string keeps it apart from the public number; the passphrase is normalized but
+  // neither trimmed nor case-folded, so the same characters always give the same number.
+  const PERSONAL_DOMAIN = 'beacon-semiprime personal v2';
+  function personalSeed(randomnessHex, passphrase) {
+    const seed = hexToBytes(randomnessHex);
+    if (seed.length !== 32) throw new Error('randomness must be 32 bytes');
+    const enc = new TextEncoder();
+    return bytesToHex(sha256(concat(enc.encode(PERSONAL_DOMAIN), seed, enc.encode(String(passphrase).normalize('NFC')))));
+  }
+  function derivePersonalN(randomnessHex, passphrase, digits) { return deriveN(personalSeed(randomnessHex, passphrase), digits); }
 
   // ---- Round / time ----
   function roundAt(unixSeconds) {   // current round number at a given time
@@ -268,7 +282,7 @@
 
   root.SP = {
     CHAIN, SIZES, DEFAULT_DIGITS, MIN_FERMAT, SMALL_PRIMES, size,
-    isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN,
+    isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN, personalSeed, derivePersonalN, PERSONAL_DOMAIN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,
     parseAnswer, checkAnswer, checkFactors, formatN, hexToBytes, bytesToHex,

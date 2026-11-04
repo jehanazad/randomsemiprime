@@ -68,6 +68,9 @@
   .err { color: var(--bad); }
   code { font-family: var(--mono); font-size: 90%; }
   #vrRandHex { word-break: break-all; }
+  .personal { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+  .personal .N { margin-top: 2px; }
+  textarea.record { min-height: 60px; margin-top: 6px; }
   footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
   footer code { word-break: break-all; }
 </style>
@@ -98,6 +101,8 @@
       <div class="row">
         <button class="primary" id="updateBtn" disabled>Update</button>
         <button class="secondary" id="liveVerifyBtn" disabled aria-expanded="false">Verify</button>
+        <button class="secondary" id="livePersonalBtn" disabled aria-expanded="false">Personal</button>
+        <button class="secondary" id="liveCopyBtn" disabled>Copy record</button>
         <span class="small">This number stays until you press Update.</span>
       </div>
       <div id="liveCheck" hidden>
@@ -107,6 +112,29 @@
           <button class="primary" id="liveCheckBtn">Check</button>
         </div>
         <div class="result" id="liveResult"></div>
+      </div>
+      <div id="livePersonal" hidden>
+        <label class="small" for="livePhrase" style="display:block;margin-top:10px">Passphrase: anything memorable that is yours alone. Combined with this round it gives a number nobody else can know. Nothing is sent or stored.</label>
+        <div class="row" style="margin-top:6px">
+          <input type="text" id="livePhrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="passphrase" style="flex:1 1 260px">
+          <button class="primary" id="liveDeriveBtn">Derive</button>
+        </div>
+        <div class="personal" id="personalBlock" hidden>
+          <div class="small">Personal number from round <b id="personalRound"></b> and your passphrase</div>
+          <div class="N" id="personalN"></div>
+          <div class="words" id="personalWords"></div>
+          <div class="row" style="margin-top:0">
+            <input type="text" id="personalAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factors to check: one or two, 5 digits or 2 words each" style="flex:1 1 260px">
+            <button class="primary" id="personalCheckBtn">Check</button>
+            <button class="secondary" id="personalCopyBtn">Copy record</button>
+          </div>
+          <div class="result" id="personalResult"></div>
+          <div class="small" style="margin-top:6px">To re-derive it later you need round <b id="personalRound2"></b> and this exact passphrase; use the passphrase field on Verify.</div>
+        </div>
+      </div>
+      <div id="liveRecordBox" hidden>
+        <div class="small" id="liveRecordMsg" style="margin-top:8px"></div>
+        <textarea class="record" id="liveRecord" readonly aria-label="record"></textarea>
       </div>
       <div class="err small" id="liveErr"></div>
     </div>
@@ -126,6 +154,8 @@
     <div class="card">
       <label class="small" for="vQuery" style="display:block">Enter a round number, a 10-digit number, or its 3 words.</label>
       <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 10 digits (spaces allowed) · three words" style="margin-top:6px">
+      <label class="small" for="vPhrase" style="display:block;margin-top:10px">Passphrase (optional): re-derives the personal number of a round. Needs the round number, since personal numbers are never in the archive.</label>
+      <input type="text" id="vPhrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="passphrase" style="margin-top:6px">
       <label class="small" for="vAnswer" style="display:block;margin-top:10px">Factors (optional): one or two, as 5 digits or 2 words each.</label>
       <div class="row" style="margin-top:6px">
         <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 73037   or   afford predict" style="flex:1 1 260px">
@@ -145,6 +175,12 @@
       <div class="small" id="vLookupMsg"></div>
       <div class="small">randomness <code id="vrRandHex"></code></div>
       <div class="result" id="vResult"></div>
+      <div class="personal" id="vrPersonal" hidden>
+        <div class="small">Personal number from this round and the passphrase</div>
+        <div class="N" id="vrPersonalN"></div>
+        <div class="words" id="vrPersonalWords"></div>
+        <div class="result" id="vPersonalResult"></div>
+      </div>
     </div>
     <div class="card">
       <b>Numbers shown in a time range</b>
@@ -166,7 +202,7 @@
     <div class="card">
       <details>
         <summary>Verify pasted round JSON offline</summary>
-        <p class="small">Paste a round (<code>{"round":…,"randomness":…,"signature":…}</code>), for example from an exported session, to verify it with no network.</p>
+        <p class="small">Paste a round (<code>{"round":…,"randomness":…,"signature":…}</code>), for example a record copied from Generate, to verify it with no network. A record that carries a passphrase re-derives its personal number too.</p>
         <textarea id="vJson" placeholder='round JSON'></textarea>
         <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
       </details>
@@ -196,6 +232,8 @@
         <li>The factor is the smallest prime ≥ candidate (primality by trial division to 10⁴, which is exact below 10⁸). Reject if it reaches 10⁵. For <i>q</i>, also reject if it equals <i>p</i>, if <i>p·q</i> ≥ 2³³ (the number would not fit in three words), or if the two are too close together: Fermat's method finds factors near √<i>N</i> quickly, so it must need at least 1 000 iterations, i.e. <code>(p+q)/2 − √(p·q) ≥ 1000</code>.</li>
         <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits. Other sizes use the same rule with their own bounds and tags (16 digits with 8-digit factors and 5 words is also defined), so one round can yield a number of each size; this page shows the 10-digit one.</li>
       </ol>
+      <h3>Personal numbers</h3>
+      <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Personal</b> under the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase, or paste the record that <b>Copy record</b> gives you. Keep a personal record private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
       <h3>Words</h3>
       <p>The number is also shown as 3 words from the BIP39 English list (base-2048, 11 bits per word, big-endian), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as 2 words, and the Verify fields accept words wherever they accept digits. The script then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
       <h3>Verify independently</h3>
@@ -357,21 +395,35 @@
     throw new Error('derivePrime: counter exhausted');
   }
 
-  // deriveFactors(randomnessHex, digits) -> {p, q}   (both BigInt; p from tag "p<digits>", q from "q<digits>")
-  function deriveFactors(randomnessHex, digits) {
+  // deriveFactors(seedHex, digits) -> {p, q}   (both BigInt; p from tag "p<digits>", q from "q<digits>")
+  // The seed is the round's randomness for the public number, or personalSeed() for a personal one.
+  function deriveFactors(seedHex, digits) {
     const sz = size(digits);
-    const seed = hexToBytes(randomnessHex);
-    if (seed.length !== 32) throw new Error('randomness must be 32 bytes');
+    const seed = hexToBytes(seedHex);
+    if (seed.length !== 32) throw new Error('seed must be 32 bytes');
     const p = derivePrime(seed, 'p' + sz.digits, sz, () => true);
     const q = derivePrime(seed, 'q' + sz.digits, sz, f => f !== p && p * f < sz.WORD_MAX && farApart(p, f));
     return { p, q };
   }
 
-  // deriveN(randomnessHex, digits) -> BigInt. Factors are not retained.
-  function deriveN(randomnessHex, digits) {
-    const f = deriveFactors(randomnessHex, digits);
+  // deriveN(seedHex, digits) -> BigInt. Factors are not retained.
+  function deriveN(seedHex, digits) {
+    const f = deriveFactors(seedHex, digits);
     return f.p * f.q;
   }
+
+  // ---- Personal numbers (SPEC.md §8) ----
+  // personalSeed(randomnessHex, passphrase) -> hex of SHA-256(domain ‖ randomness ‖ UTF-8(NFC(passphrase))).
+  // The domain string keeps it apart from the public number; the passphrase is normalized but
+  // neither trimmed nor case-folded, so the same characters always give the same number.
+  const PERSONAL_DOMAIN = 'beacon-semiprime personal v2';
+  function personalSeed(randomnessHex, passphrase) {
+    const seed = hexToBytes(randomnessHex);
+    if (seed.length !== 32) throw new Error('randomness must be 32 bytes');
+    const enc = new TextEncoder();
+    return bytesToHex(sha256(concat(enc.encode(PERSONAL_DOMAIN), seed, enc.encode(String(passphrase).normalize('NFC')))));
+  }
+  function derivePersonalN(randomnessHex, passphrase, digits) { return deriveN(personalSeed(randomnessHex, passphrase), digits); }
 
   // ---- Round / time ----
   function roundAt(unixSeconds) {   // current round number at a given time
@@ -495,7 +547,7 @@
 
   root.SP = {
     CHAIN, SIZES, DEFAULT_DIGITS, MIN_FERMAT, SMALL_PRIMES, size,
-    isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN,
+    isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN, personalSeed, derivePersonalN, PERSONAL_DOMAIN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,
     parseAnswer, checkAnswer, checkFactors, formatN, hexToBytes, bytesToHex,
@@ -561,8 +613,10 @@
     setPill($('liveSig'), 'ok', 'drand sig ✓');
     $('liveN').textContent = SP.formatN(b.N);
     renderWords($('liveWords'), SP.encodeN(b.N));
-    $('liveVerifyBtn').disabled = false;
+    $('liveVerifyBtn').disabled = false; $('livePersonalBtn').disabled = false; $('liveCopyBtn').disabled = false;
     $('liveAnswer').value = ''; $('liveResult').textContent = ''; $('liveResult').className = 'result';   // a new number: old verdict no longer applies
+    $('personalBlock').hidden = true; personal = null;                                                   // a personal number is bound to its round
+    $('liveRecordBox').hidden = true;
     renderUpdateBtn();
     renderFeed();
   }
@@ -610,6 +664,49 @@
   });
   $('liveCheckBtn').addEventListener('click', () => { if (focused) renderVerdict($('liveResult'), focused.N, $('liveAnswer').value); });
   $('liveAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('liveCheckBtn').click(); });
+
+  // ---------- personal numbers (SPEC.md §8): derived here from the focused round and a passphrase ----------
+  let personal = null;               // {round, N, passphrase} for the block shown, or null
+  $('livePersonalBtn').addEventListener('click', () => {
+    const open = $('livePersonal').hidden;
+    $('livePersonal').hidden = !open;
+    $('livePersonalBtn').setAttribute('aria-expanded', String(open));
+    if (open) $('livePhrase').focus();
+  });
+  $('liveDeriveBtn').addEventListener('click', () => {
+    if (!focused) return;
+    const phrase = $('livePhrase').value;
+    if (!phrase) { $('liveErr').textContent = 'enter a passphrase'; return; }
+    $('liveErr').textContent = '';
+    const N = SP.derivePersonalN(focused.randomness, phrase);
+    personal = { round: focused.round, N, passphrase: phrase };
+    $('personalRound').textContent = focused.round; $('personalRound2').textContent = focused.round;
+    $('personalN').textContent = SP.formatN(N);
+    renderWords($('personalWords'), SP.encodeN(N));
+    $('personalAnswer').value = ''; $('personalResult').textContent = ''; $('personalResult').className = 'result';
+    $('personalBlock').hidden = false;
+  });
+  $('livePhrase').addEventListener('keydown', e => { if (e.key === 'Enter') $('liveDeriveBtn').click(); });
+  $('personalCheckBtn').addEventListener('click', () => { if (personal) renderVerdict($('personalResult'), personal.N, $('personalAnswer').value); });
+  $('personalAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('personalCheckBtn').click(); });
+
+  // A record is the round (enough to re-verify it anywhere, offline included) plus what was derived
+  // from it. It is shown in a box and copied to the clipboard when the browser allows.
+  function record(b, pers) {
+    const r = { spec: 'beacon-semiprime v2', round: b.round, time: utc(b.time) + ' UTC', randomness: b.randomness, signature: b.signature,
+      n: b.N.toString(), words: SP.encodeN(b.N).join(' ') };
+    if (pers) { r.passphrase = pers.passphrase; r.personal = { n: pers.N.toString(), words: SP.encodeN(pers.N).join(' ') }; }
+    return JSON.stringify(r, null, 1);
+  }
+  async function showRecord(text, what) {
+    $('liveRecord').value = text; $('liveRecordBox').hidden = false;
+    let copied = false;
+    try { await navigator.clipboard.writeText(text); copied = true; } catch (e) { copied = false; }
+    $('liveRecordMsg').textContent = (copied ? 'Copied to the clipboard. ' : 'Could not reach the clipboard; copy it from the box. ') +
+      'The ' + what + ' record re-verifies on the Verify tab, pasted as round JSON' + (what === 'personal' ? ', and carries the passphrase, so keep it private.' : '.');
+  }
+  $('liveCopyBtn').addEventListener('click', () => { if (focused) showRecord(record(focused, null), 'public'); });
+  $('personalCopyBtn').addEventListener('click', () => { if (focused && personal && personal.round === focused.round) showRecord(record(focused, personal), 'personal'); });
   // Clicking a round in the feed makes it the focused round.
   $('feedList').addEventListener('click', e => {
     const li = e.target.closest('li[data-round]');
@@ -682,7 +779,7 @@
   }
 
   // ---------- verify tab ----------
-  function showVerified(b, note) {
+  function showVerified(b, note, phrase) {
     $('vrRound').textContent = b.round;
     $('vrTime').textContent = utc(b.time);
     setPill($('vrSig'), b.sigOk ? 'ok' : 'bad', b.sigOk ? 'BLS signature valid' : 'BLS signature INVALID');
@@ -691,7 +788,18 @@
     renderWords($('vrWords'), SP.encodeN(b.N));
     $('vrRandHex').textContent = b.randomness;
     $('vLookupMsg').textContent = note || '';
-    renderVerdict($('vResult'), b.N, $('vAnswer').value);
+    // With a passphrase the factors are checked against the personal number, which is the one under test.
+    if (phrase) {
+      const N = SP.derivePersonalN(b.randomness, phrase);
+      $('vrPersonalN').textContent = SP.formatN(N);
+      renderWords($('vrPersonalWords'), SP.encodeN(N));
+      renderVerdict($('vPersonalResult'), N, $('vAnswer').value);
+      $('vResult').textContent = ''; $('vResult').className = 'result';
+      $('vrPersonal').hidden = false;
+    } else {
+      renderVerdict($('vResult'), b.N, $('vAnswer').value);
+      $('vrPersonal').hidden = true;
+    }
     $('vCard').hidden = false; $('vErr').textContent = '';
   }
   function roundNote(b, how) {
@@ -744,12 +852,14 @@
   $('vFetchBtn').addEventListener('click', async () => {
     const seq = ++verifySeq;
     let q;
+    const phrase = $('vPhrase').value;
     try { q = parseQuery($('vQuery').value); } catch (e) { $('vErr').textContent = e.message; return; }
+    if (phrase && !q.round) { $('vErr').textContent = 'a personal number is re-derived from its round number: enter the round, not the number'; return; }
     $('vErr').textContent = q.round ? 'fetching round ' + q.round + '…' : 'looking up ' + q.N + '…';
     try {
       const r = q.round ? await verifyByRound(q.round) : await verifyByN(q.N);
       if (seq !== verifySeq) return;
-      showVerified(r.b, roundNote(r.b, r.how));
+      showVerified(r.b, roundNote(r.b, r.how), phrase);
     } catch (e) {
       if (seq !== verifySeq) return;
       $('vErr').textContent = (q.round ? 'could not fetch/verify round ' + q.round + ': ' : '') + (e.message || e);
@@ -757,10 +867,16 @@
   });
   $('vQuery').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
+  $('vPhrase').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
     verifySeq++;
-    try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.')); }
-    catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
+    try {
+      const j = JSON.parse($('vJson').value);
+      const b = validateBeacon(j);
+      // a record's own passphrase is used when the field is empty
+      const phrase = $('vPhrase').value || (typeof j.passphrase === 'string' ? j.passphrase : '');
+      showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.'), phrase);
+    } catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
 
   // ---------- time range ----------

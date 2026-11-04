@@ -16,7 +16,11 @@ for (const v of vecs.rounds) {
   for (const digits of vecs.sizes) {
     const { p, q } = SP.deriveFactors(v.randomness, digits);
     const N = p * q;
+    const seed = SP.personalSeed(v.randomness, vecs.passphrase);
+    if (seed !== SP.personalSeed(v.randomness, vecs.passphrase.normalize('NFC'))) throw new Error('NFC normalization is not applied');
+    const pn = SP.deriveFactors(seed, digits);
     console.log(JSON.stringify({ round: v.round, digits, randomness: v.randomness, p: Number(p), q: Number(q), N: N.toString(),
-      N_words: SP.encodeN(N, digits), p_words: SP.encodeFactor(p, digits), q_words: SP.encodeFactor(q, digits) }));
+      N_words: SP.encodeN(N, digits), p_words: SP.encodeFactor(p, digits), q_words: SP.encodeFactor(q, digits),
+      personal_seed: seed, personal_p: Number(pn.p), personal_q: Number(pn.q), personal_N: (pn.p * pn.q).toString(), personal_N_words: SP.encodeN(pn.p * pn.q, digits) }));
   }
 }

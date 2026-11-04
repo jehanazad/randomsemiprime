@@ -39,7 +39,7 @@ def check(cond, msg):
 with sync_playwright() as p:
     browser = p.chromium.launch()
     # A non-UTC zone so the local-time branch of the lookup is really exercised.
-    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, timezone_id='America/New_York')
+    ctx = browser.new_context(viewport={'width': 420, 'height': 900}, timezone_id='America/New_York', permissions=['clipboard-read', 'clipboard-write'])
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -162,8 +162,32 @@ with sync_playwright() as p:
         page.fill('#liveAnswer', '73037'); page.click('#liveCheckBtn')
         src = page.inner_text('#liveCard')
         check('32441' not in src and 'acid' not in src, 'the other factor is never shown')
+    # personal number: focused round 33470004 + passphrase 'open sesame' -> 4481058889 = 53479 x 83791 (machine funny ankle)
+    check(page.is_hidden('#livePersonal') and not page.is_disabled('#livePersonalBtn'), 'personal panel starts closed, button enabled')
+    page.click('#livePersonalBtn')
+    check(page.is_visible('#livePersonal') and page.is_hidden('#personalBlock'), 'Personal opens the passphrase field with no number yet')
+    page.click('#liveDeriveBtn')
+    check(page.inner_text('#liveErr') == 'enter a passphrase' and page.is_hidden('#personalBlock'), 'an empty passphrase is refused')
+    page.fill('#livePhrase', 'open sesame'); page.press('#livePhrase', 'Enter')
+    record = None
+    if OFFLINE:
+        check(page.is_visible('#personalBlock') and page.inner_text('#personalN') == '448 105 8889' and page.inner_text('#personalWords') == 'machine funny ankle' and page.inner_text('#personalRound') == '33470004', 'personal number derived from the round and passphrase: ' + page.inner_text('#personalN'))
+        check(page.inner_text('#liveN') == '236 939 3317', 'the public number is unchanged')
+        page.fill('#personalAnswer', '53479'); page.press('#personalAnswer', 'Enter')
+        check(page.inner_text('#personalResult') == 'Correct — 53479 is a factor of 448 105 8889.', 'personal factor check: ' + page.inner_text('#personalResult'))
+        page.fill('#personalAnswer', '73037'); page.click('#personalCheckBtn')
+        check(page.inner_text('#personalResult').startswith('Wrong'), 'a factor of the public number is wrong for the personal one')
+        page.click('#personalCopyBtn')
+        page.wait_for_function("document.getElementById('liveRecordMsg').textContent.length > 0", timeout=5000)
+        record = json.loads(page.input_value('#liveRecord'))
+        check(record['round'] == 33470004 and record['signature'] == LATEST['signature'] and record['passphrase'] == 'open sesame' and record['personal'] == {'n': '4481058889', 'words': 'machine funny ankle'} and record['n'] == '2369393317', 'personal record carries the round, passphrase and both numbers')
+        check(page.inner_text('#liveRecordMsg').startswith('Copied to the clipboard.') and page.evaluate('navigator.clipboard.readText()') == page.input_value('#liveRecord'), 'record is on the clipboard')
+        page.click('#liveCopyBtn')
+        pub = json.loads(page.input_value('#liveRecord'))
+        check('passphrase' not in pub and 'personal' not in pub and pub['n'] == '2369393317' and pub['words'] == 'educate tribe feed', 'public record has no passphrase')
     page.click('#feedList li:nth-child(2) .n')
     check(page.input_value('#liveAnswer') == '' and page.inner_text('#liveResult') == '', 'focusing another round clears the factor check')
+    check(page.is_hidden('#personalBlock') and page.input_value('#livePhrase') == 'open sesame' and page.is_hidden('#liveRecordBox'), 'focusing another round clears the personal number and record but keeps the passphrase')
     page.click('#updateBtn')
     if OFFLINE:
         check(newest_n == '2369393317', 'newest N matches test vector')
@@ -193,6 +217,18 @@ with sync_playwright() as p:
     check(verify_factors('47317x82963').startswith('Correct — 47317 × 82963'), 'x between digits still separates factors')
     check(verify_factors('actual boy 11111') == 'Partly correct — 47317 is a factor; 11111 is not.', 'one wrong factor of two is reported')
     check(verify_factors('actual boy actual boy').startswith('Partly correct — 47317 is a factor, but it was given twice'), 'same factor twice is reported')
+    check(page.is_hidden('#vrPersonal'), 'no personal block without a passphrase')
+
+    # personal number on Verify: round + passphrase, factors checked against the personal number
+    page.fill('#vPhrase', 'open sesame'); page.fill('#vQuery', '33470004'); page.fill('#vAnswer', '53479')
+    page.evaluate("document.getElementById('vLookupMsg').textContent = ''")
+    page.click('#vFetchBtn')
+    page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0", timeout=15000)
+    check(page.is_visible('#vrPersonal') and page.inner_text('#vrPersonalN') == '448 105 8889' and page.inner_text('#vrPersonalWords') == 'machine funny ankle', 'round + passphrase re-derives the personal number')
+    check(page.inner_text('#vrN') == '236 939 3317' and page.inner_text('#vPersonalResult') == 'Correct — 53479 is a factor of 448 105 8889.' and page.inner_text('#vResult') == '', 'public number still shown; factors judged against the personal number')
+    page.fill('#vQuery', '2369393317'); page.click('#vFetchBtn')
+    check(page.inner_text('#vErr').startswith('a personal number is re-derived from its round number'), 'passphrase with a number query is refused')
+    page.fill('#vPhrase', ''); page.fill('#vAnswer', '')
 
     # by 16-digit number and by 5 words, through the archive
     def verify_query(q, factors=''):
@@ -238,7 +274,11 @@ with sync_playwright() as p:
     check(page.inner_text('#vrRand') == 'randomness MISMATCH', 'randomness mismatch flagged')
     check(page.inner_text('#vLookupMsg').startswith('Round 1 failed verification'), 'note says not to trust a failed round')
     page.fill('#vJson', json.dumps(ROUNDS[20000000])); page.click('#vJsonBtn')
-    check(page.inner_text('#vrN') == '374 427 5237', 'pasted JSON for round 20000000 verifies and derives N')
+    check(page.inner_text('#vrN') == '374 427 5237' and page.is_hidden('#vrPersonal'), 'pasted JSON for round 20000000 verifies and derives N')
+    if record:
+        page.fill('#vAnswer', '83791'); page.fill('#vJson', json.dumps(record)); page.click('#vJsonBtn')
+        check(page.inner_text('#vrN') == '236 939 3317' and page.is_visible('#vrPersonal') and page.inner_text('#vrPersonalN') == '448 105 8889' and page.inner_text('#vPersonalResult').startswith('Correct — 83791'), 'a pasted personal record re-derives its personal number offline and checks factors against it')
+        page.fill('#vAnswer', '')
 
     # time range: rounds 19999999..20000002 around a vector round (UTC)
     t = round_time(20000000)

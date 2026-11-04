@@ -31,6 +31,13 @@ the browser.
    entered alongside, as 5 digits or 2 words each; each is checked by division and the verdict says
    whether it is correct, partly correct (one of two), or wrong. The same check is available
    under the number on **Generate** via its **Verify** button. The page never shows the factors.
+   **Personal** under the number takes a passphrase and derives a personal number from the round
+   and the passphrase (`SPEC.md` §7), entirely in the browser: it is never sent or stored, and the
+   archive cannot know it. **Copy record** puts the round, the number and (for a personal number)
+   the passphrase on the clipboard as JSON that the Verify tab accepts offline.
+   A passphrase can be given with a round number: the round's personal number is then re-derived
+   and the factors are checked against it. Pasted round JSON (such as a copied record) still
+   verifies offline, and a record that carries a passphrase re-derives its personal number too.
 3. **Numbers shown in a time range** lists every round between two times (local time or UTC),
    newest first, at most 100 rounds (5 minutes) per lookup: archive rows first, and anything the
    archive lacks fetched from drand. Each row has a **verify** button that runs the full check.
@@ -71,6 +78,7 @@ python3 verify.py --json round.json   # same, offline
 python3 verify.py --check 33470004 73037
 python3 verify.py --check 33470004 afford predict
 python3 verify.py --digits 16 33470004   # the 16-digit number of the same round
+python3 verify.py --passphrase 'open sesame' 33470004   # the personal number for that passphrase
 python3 verify.py --vectors           # print derivations for test-vectors.json, every size
 ```
 

@@ -9,12 +9,14 @@ Usage:
 
   --digits D (before the other arguments) selects the size of N; default 10 (two 5-digit
   factors, 3 words; a factor is 2 words). 16 is also defined (8-digit factors, 5 and 3 words).
+  --passphrase TEXT (before the other arguments) derives the personal number for the round and
+  that passphrase (SPEC.md §8) instead of the public one.
 
 Derivation uses only the standard library. BLS signature verification is attempted if
 `py_ecc` is installed (pip install py_ecc); otherwise it is reported as skipped. The
 randomness == SHA-256(signature) check always runs.
 """
-import hashlib, json, os, sys, urllib.request
+import hashlib, json, os, sys, unicodedata, urllib.request
 
 CHAIN_HASH = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
 PUBLIC_KEY = ("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a")
@@ -89,13 +91,22 @@ def derive_prime(seed, tag, sz, accept=lambda f: True):
         return p
     raise RuntimeError("counter exhausted")
 
-def derive_factors(randomness_hex, digits=DEFAULT_DIGITS):
+def derive_factors(seed_hex, digits=DEFAULT_DIGITS):
+    """seed_hex: the round's randomness for the public number, or personal_seed() for a personal one."""
     sz = SIZES[digits]
-    seed = bytes.fromhex(randomness_hex)
+    seed = bytes.fromhex(seed_hex)
     assert len(seed) == 32
     p = derive_prime(seed, "p%d" % digits, sz)
     q = derive_prime(seed, "q%d" % digits, sz, lambda f: f != p and p * f < sz["WORD_MAX"] and far_apart(p, f))
     return p, q
+
+# ---- personal numbers (SPEC.md §8) ----
+PERSONAL_DOMAIN = b"beacon-semiprime personal v2"
+
+def personal_seed(randomness_hex, passphrase):
+    seed = bytes.fromhex(randomness_hex)
+    assert len(seed) == 32
+    return hashlib.sha256(PERSONAL_DOMAIN + seed + unicodedata.normalize("NFC", passphrase).encode("utf-8")).hexdigest()
 
 # ---- wordlist encoding (SPEC.md §4) ----
 def encode_words(n, count):
@@ -161,13 +172,13 @@ def verify_bls(beacon):
     rhs = pairing(neg(pk), H, final_exponentiate=False)
     return final_exponentiate(lhs * rhs) == FQ12.one()
 
-def report(beacon, digits=DEFAULT_DIGITS, show_factors=True):
+def report(beacon, digits=DEFAULT_DIGITS, show_factors=True, passphrase=None):
     sz = SIZES[digits]
     r = int(beacon["round"])
     rnd, sig = beacon["randomness"].lower(), beacon["signature"].lower()
     rnd_ok = hashlib.sha256(bytes.fromhex(sig)).hexdigest() == rnd
     bls = verify_bls(beacon)
-    p, q = derive_factors(rnd, digits)
+    p, q = derive_factors(rnd if passphrase is None else personal_seed(rnd, passphrase), digits)
     N = p * q
     import datetime
     t = datetime.datetime.fromtimestamp(round_time(r), datetime.timezone.utc)
@@ -176,7 +187,7 @@ def report(beacon, digits=DEFAULT_DIGITS, show_factors=True):
     print(f"randomness   {rnd}")
     print(f"rand==H(sig) {'OK' if rnd_ok else 'FAIL'}")
     print(f"BLS sig      {'skipped (pip install py_ecc)' if bls is None else ('OK' if bls else 'FAIL')}")
-    print(f"N            {N}  ({digits} digits)")
+    print(f"N            {N}  ({digits} digits{', personal' if passphrase is not None else ''})")
     print(f"N words      {' '.join(encode_words(N, sz['words']))}")
     if show_factors:
         print(f"p            {p}  ({' '.join(encode_words(p, sz['factor_words']))})")
@@ -186,11 +197,17 @@ def report(beacon, digits=DEFAULT_DIGITS, show_factors=True):
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__); return
-    digits = DEFAULT_DIGITS
-    if argv[0] == "--digits":
-        digits = int(argv[1]); argv = argv[2:]
-        if digits not in SIZES:
-            raise SystemExit("supported sizes: " + ", ".join(map(str, SIZES)))
+    digits, passphrase = DEFAULT_DIGITS, None
+    while argv and argv[0] in ("--digits", "--passphrase"):
+        if argv[0] == "--digits":
+            digits = int(argv[1])
+            if digits not in SIZES:
+                raise SystemExit("supported sizes: " + ", ".join(map(str, SIZES)))
+        else:
+            passphrase = argv[1]
+        argv = argv[2:]
+    if not argv:
+        print(__doc__); return
     sz = SIZES[digits]
     if argv[0] == "--vectors":
         vecs = json.load(open(os.path.join(HERE, "test-vectors.json")))
@@ -198,17 +215,22 @@ def main(argv):
             for d in vecs["sizes"]:
                 z = SIZES[d]
                 p, q = derive_factors(v["randomness"], d)
+                seed = personal_seed(v["randomness"], vecs["passphrase"])
+                assert seed == personal_seed(v["randomness"], unicodedata.normalize("NFC", vecs["passphrase"]))
+                pp, pq = derive_factors(seed, d)
                 print(json.dumps({"round": v["round"], "digits": d, "randomness": v["randomness"], "p": p, "q": q, "N": str(p*q),
                                   "N_words": encode_words(p*q, z["words"]), "p_words": encode_words(p, z["factor_words"]),
-                                  "q_words": encode_words(q, z["factor_words"])}))
+                                  "q_words": encode_words(q, z["factor_words"]),
+                                  "personal_seed": seed, "personal_p": pp, "personal_q": pq, "personal_N": str(pp*pq),
+                                  "personal_N_words": encode_words(pp*pq, z["words"])}))
         return
     if argv[0] == "--json":
         beacon = json.load(open(argv[1]))
-        report(beacon, digits); return
+        report(beacon, digits, passphrase=passphrase); return
     if argv[0] == "--check":
         r = int(argv[1]); toks = argv[2:]
         beacon = fetch_round(r)
-        N = report(beacon, digits, show_factors=False)
+        N = report(beacon, digits, show_factors=False, passphrase=passphrase)
         # split tokens into factors: digit tokens stand alone, words in groups of factor_words
         factors, buf = [], []
         for t in toks:
@@ -228,7 +250,7 @@ def main(argv):
         else:
             raise SystemExit("give one or two factors")
         return
-    report(fetch_round(int(argv[0])), digits)
+    report(fetch_round(int(argv[0])), digits, passphrase=passphrase)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

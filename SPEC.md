@@ -148,10 +148,27 @@ A row of the archive maps a round to its `N` of the displayed size, stored as te
 with the round's randomness and signature. Readers MUST re-derive `N` from the randomness
 rather than trust the stored text, as the page does.
 
-## 7. Test vectors
+## 7. Personal numbers
 
-See `test-vectors.json`: three real rounds, derived at every size in its `sizes` list.
-Expected results:
+A personal number is derived from a round and a passphrase chosen by the user, so that it is
+unknown to anyone who has not seen the passphrase while keeping the round's freshness. With
+`domain = "beacon-semiprime personal v2"` (ASCII, no terminator):
+
+```
+seed = SHA-256( domain ‖ randomness (32 bytes) ‖ UTF-8( NFC(passphrase) ) )
+p, q, N  as in §3, with `seed` in place of the randomness
+```
+
+The passphrase is Unicode-normalized to NFC and otherwise used as given: not trimmed, not
+case-folded. Sizes, tags, the word bound and the gap rule are unchanged. Implementations MUST
+NOT transmit or store the passphrase or the personal number; the archive (§6) holds public
+numbers only, so a personal number is re-derived from its round and passphrase.
+
+## 8. Test vectors
+
+See `test-vectors.json`: three real rounds, derived at every size in its `sizes` list, and
+also as personal numbers with its `passphrase` (which contains a decomposed `é`, so that NFC
+normalization is exercised). Expected public results:
 
 | round      | D  | p          | q          | N                | N words                               |
 |------------|----|------------|------------|------------------|---------------------------------------|
@@ -164,3 +181,14 @@ Expected results:
 
 Factor words (`D = 10`): 47317 = `actual boy`, 82963 = `agree list`, 50989 = `adapt toss`,
 73433 = `afford swamp`, 73037 = `afford predict`, 32441 = `acid strong`.
+
+Personal results for the vector passphrase (`personal_*` fields of `verify.py --vectors`):
+
+| round      | D  | p          | q          | N                | N words                                |
+|------------|----|------------|------------|------------------|----------------------------------------|
+| 1          | 10 | 93 601     | 64 553     | 6042225353       | reduce neither float                   |
+| 1          | 16 | 64 166 657 | 71 400 961 | 4581560973957377 | calm hover topple kidney cage          |
+| 20 000 000 | 10 | 41 903     | 99 643     | 4175340629       | ladder kind melt                       |
+| 20 000 000 | 16 | 85 581 887 | 37 306 307 | 3192744150061309 | birth lady filter rally cabbage        |
+| 33 470 004 | 10 | 47 533     | 90 107     | 4283056031       | leisure cigar view                     |
+| 33 470 004 | 16 | 39 668 579 | 33 820 433 | 1341608518274707 | another drill sister permit sponsor    |
