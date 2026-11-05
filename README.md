@@ -33,11 +33,11 @@ the browser.
    under the number on **Generate** via its **Verify** button. The page never shows the factors.
    **Generate a personal totem** at the top right takes a passphrase and derives a personal number from the round
    and the passphrase (`SPEC.md` §7), entirely in the browser: it is never sent or stored, and the
-   archive cannot know it. **Copy record** puts the round, the number and (for a personal number)
-   the passphrase on the clipboard as JSON that the Verify tab accepts offline.
+   archive cannot know it. The copy button beside a number puts a short plain-text note on the
+   clipboard: the number, its words, the passphrase for a personal number, the round and its time.
    A passphrase can be given with a round number: the round's personal number is then re-derived
-   and the factors are checked against it. Pasted round JSON (such as a copied record) still
-   verifies offline, and a record that carries a passphrase re-derives its personal number too.
+   and the factors are checked against it. Pasted round JSON still verifies offline, with the
+   passphrase field applying there too.
 3. **Numbers shown in a time range** lists every round between two times (local time or UTC),
    newest first, at most 100 rounds (5 minutes) per lookup: archive rows first, and anything the
    archive lacks fetched from drand. Each row has a **verify** button that runs the full check.

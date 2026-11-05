@@ -71,6 +71,7 @@
   .personal { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
   .personal .N { margin-top: 2px; }
   textarea.record { min-height: 60px; margin-top: 6px; }
+  button.icon { padding: 8px 10px; line-height: 0; vertical-align: middle; }
   footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
   footer code { word-break: break-all; }
 </style>
@@ -104,7 +105,7 @@
       <div class="row">
         <button class="primary" id="updateBtn" disabled>Update</button>
         <button class="secondary" id="liveVerifyBtn" disabled aria-expanded="false">Verify</button>
-        <button class="secondary" id="liveCopyBtn" disabled>Copy record</button>
+        <button class="secondary icon" id="liveCopyBtn" disabled title="Copy record" aria-label="Copy record"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         <span class="small">This number stays until you press Update.</span>
       </div>
       <div id="liveCheck" hidden>
@@ -128,7 +129,7 @@
           <div class="row" style="margin-top:0">
             <input type="text" id="personalAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factors to check: one or two, 5 digits or 2 words each" style="flex:1 1 260px">
             <button class="primary" id="personalCheckBtn">Check</button>
-            <button class="secondary" id="personalCopyBtn">Copy record</button>
+            <button class="secondary icon" id="personalCopyBtn" title="Copy record" aria-label="Copy record"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
           <div class="result" id="personalResult"></div>
           <div class="small" style="margin-top:6px">To re-derive it later you need round <b id="personalRound2"></b> and this exact passphrase; use the passphrase field on Verify.</div>
@@ -204,7 +205,7 @@
     <div class="card">
       <details>
         <summary>Verify pasted round JSON offline</summary>
-        <p class="small">Paste a round (<code>{"round":…,"randomness":…,"signature":…}</code>), for example a record copied from Generate, to verify it with no network. A record that carries a passphrase re-derives its personal number too.</p>
+        <p class="small">Paste a round (<code>{"round":…,"randomness":…,"signature":…}</code>) to verify it with no network. With a passphrase in the field above, its personal number is re-derived too.</p>
         <textarea id="vJson" placeholder='round JSON'></textarea>
         <div class="row" style="margin-top:6px"><button class="secondary" id="vJsonBtn">Verify pasted JSON</button></div>
       </details>
@@ -235,7 +236,7 @@
         <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits. Other sizes use the same rule with their own bounds and tags (16 digits with 8-digit factors and 5 words is also defined), so one round can yield a number of each size; this page shows the 10-digit one.</li>
       </ol>
       <h3>Personal numbers</h3>
-      <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Generate a personal totem</b> at the top right of the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase, or paste the record that <b>Copy record</b> gives you. Keep a personal record private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
+      <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Generate a personal totem</b> at the top right of the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase. The copy button beside a number puts a short note on the clipboard: the number, its words, the passphrase for a personal number, the round and its time. Keep a personal note private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
       <h3>Words</h3>
       <p>The number is also shown as 3 words from the BIP39 English list (base-2048, 11 bits per word, big-endian), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as 2 words, and the Verify fields accept words wherever they accept digits. The script then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
       <h3>Verify independently</h3>
@@ -390,20 +391,20 @@
   $('personalCheckBtn').addEventListener('click', () => { if (personal) renderVerdict($('personalResult'), personal.N, $('personalAnswer').value); });
   $('personalAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('personalCheckBtn').click(); });
 
-  // A record is the round (enough to re-verify it anywhere, offline included) plus what was derived
-  // from it. It is shown in a box and copied to the clipboard when the browser allows.
+  // A record is a few lines of plain text: the number, its words, the passphrase for a personal
+  // number, the round and its time. It is copied to the clipboard when the browser allows, and
+  // shown in a box either way.
   function record(b, pers) {
-    const r = { spec: 'beacon-semiprime v2', round: b.round, time: utc(b.time) + ' UTC', randomness: b.randomness, signature: b.signature,
-      n: b.N.toString(), words: SP.encodeN(b.N).join(' ') };
-    if (pers) { r.passphrase = pers.passphrase; r.personal = { n: pers.N.toString(), words: SP.encodeN(pers.N).join(' ') }; }
-    return JSON.stringify(r, null, 1);
+    const N = pers ? pers.N : b.N;
+    return [SP.formatN(N), SP.encodeN(N).join(' ')].concat(pers ? ['passphrase: ' + pers.passphrase] : [])
+      .concat(['round ' + b.round, utc(b.time) + ' UTC']).join('\n');
   }
   async function showRecord(text, what) {
     $('liveRecord').value = text; $('liveRecordBox').hidden = false;
     let copied = false;
     try { await navigator.clipboard.writeText(text); copied = true; } catch (e) { copied = false; }
     $('liveRecordMsg').textContent = (copied ? 'Copied to the clipboard. ' : 'Could not reach the clipboard; copy it from the box. ') +
-      'The ' + what + ' record re-verifies on the Verify tab, pasted as round JSON' + (what === 'personal' ? ', and carries the passphrase, so keep it private.' : '.');
+      (what === 'personal' ? 'The round and passphrase re-derive it on Verify, so keep this private.' : 'The round number re-verifies it on Verify.');
   }
   $('liveCopyBtn').addEventListener('click', () => { if (focused) showRecord(record(focused, null), 'public'); });
   $('personalCopyBtn').addEventListener('click', () => { if (focused && personal && personal.round === focused.round) showRecord(record(focused, personal), 'personal'); });
@@ -570,13 +571,8 @@
   $('vPhrase').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
     verifySeq++;
-    try {
-      const j = JSON.parse($('vJson').value);
-      const b = validateBeacon(j);
-      // a record's own passphrase is used when the field is empty
-      const phrase = $('vPhrase').value || (typeof j.passphrase === 'string' ? j.passphrase : '');
-      showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.'), phrase);
-    } catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
+    try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.'), $('vPhrase').value); }
+    catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
 
   // ---------- time range ----------
