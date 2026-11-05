@@ -31,7 +31,7 @@ the browser.
    entered alongside, as 5 digits or 2 words each; each is checked by division and the verdict says
    whether it is correct, partly correct (one of two), or wrong. The same check is available
    under the number on **Generate** via its **Verify** button. The page never shows the factors.
-   **Personal** under the number takes a passphrase and derives a personal number from the round
+   **Generate a personal totem** at the top right takes a passphrase and derives a personal number from the round
    and the passphrase (`SPEC.md` §7), entirely in the browser: it is never sent or stored, and the
    archive cannot know it. **Copy record** puts the round, the number and (for a personal number)
    the passphrase on the clipboard as JSON that the Verify tab accepts offline.

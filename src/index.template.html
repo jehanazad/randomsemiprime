@@ -91,7 +91,10 @@
   <!-- ================= LIVE ================= -->
   <section id="tab-live">
     <div class="card" id="liveCard">
-      <div class="N" id="liveN" style="margin-top:4px">— — — —</div>
+      <div class="row" style="margin-top:0; justify-content: space-between; align-items: flex-start">
+        <div class="N" id="liveN" style="margin-top:4px">— — — —</div>
+        <button class="secondary" id="livePersonalBtn" disabled aria-expanded="false" style="margin-left:auto">Generate a personal totem</button>
+      </div>
       <div class="words"><span id="liveWords"></span> <span class="small" id="liveWordsNote">(encoded as BIP39 big-endian)</span></div>
       <div class="status">
         <span>round <b id="liveRound">—</b></span>
@@ -101,7 +104,6 @@
       <div class="row">
         <button class="primary" id="updateBtn" disabled>Update</button>
         <button class="secondary" id="liveVerifyBtn" disabled aria-expanded="false">Verify</button>
-        <button class="secondary" id="livePersonalBtn" disabled aria-expanded="false">Personal</button>
         <button class="secondary" id="liveCopyBtn" disabled>Copy record</button>
         <span class="small">This number stays until you press Update.</span>
       </div>
@@ -233,7 +235,7 @@
         <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits. Other sizes use the same rule with their own bounds and tags (16 digits with 8-digit factors and 5 words is also defined), so one round can yield a number of each size; this page shows the 10-digit one.</li>
       </ol>
       <h3>Personal numbers</h3>
-      <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Personal</b> under the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase, or paste the record that <b>Copy record</b> gives you. Keep a personal record private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
+      <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Generate a personal totem</b> at the top right of the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase, or paste the record that <b>Copy record</b> gives you. Keep a personal record private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
       <h3>Words</h3>
       <p>The number is also shown as 3 words from the BIP39 English list (base-2048, 11 bits per word, big-endian), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as 2 words, and the Verify fields accept words wherever they accept digits. The script then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
       <h3>Verify independently</h3>
