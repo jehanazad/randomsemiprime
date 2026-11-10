@@ -1,6 +1,6 @@
 {
   "spec": "beacon-semiprime v2",
-  "sizes": [10, 16],
+  "sizes": [5, 7, 8, 10, 12, 14, 16],
   "passphrase": "Prime Totem test \u2014 cafe\u0301 \u2713",
   "passphrase_note": "cafe + U+0301 (combining acute); NFC composes it to caf\u00e9, and both spellings must give the same number",
   "chain": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",

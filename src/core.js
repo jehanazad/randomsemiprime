@@ -22,11 +22,11 @@
   };
 
   // ---- Sizes (SPEC.md §2) ----
-  // A size is the number of decimal digits of N; both factors have half as many. Every size is
-  // derived from the same seed independently (the tag carries the digit count), so one round can
-  // yield a number of each size. The page shows DEFAULT_DIGITS only.
+  // A size is the number of decimal digits of N. Both factors lie in [ceil(sqrt(10^(D-1))),
+  // ceil(sqrt(10^D))), capped so that each fits its word count, so N always has D digits. Every
+  // size is derived from the same seed independently (the tag carries the digit count), so one
+  // round yields a number of each size. TIERS are the sizes the page offers and the archive stores.
   const MAX_CTR = 256;
-  const MIN_FERMAT = 1000n;         // Fermat's method must need at least this many iterations (§3.3)
 
   function isqrt(n) {               // floor(sqrt(n)) for BigInt n >= 0
     if (n < 2n) return n;
@@ -35,23 +35,31 @@
     while ((x + 1n) * (x + 1n) <= n) x++;
     return x;
   }
-  function makeSize(digits, words, factorWords, groups) {
-    if (digits % 2 || digits < 2 || digits > 16) throw new Error('digits must be even and at most 16');
-    const fd = digits / 2;
-    const HIGH = 10n ** BigInt(fd);                         // factors are strictly below this
-    const LOW = isqrt(10n ** BigInt(digits - 1) - 1n) + 1n; // ceil(sqrt(10^(digits-1))): p*q >= 10^(digits-1)
+  function makeSize(digits, words, factorWords, minFermat, groups) {
+    if (digits < 2 || digits > 16) throw new Error('digits must be between 2 and 16');
+    const LOW = isqrt(10n ** BigInt(digits - 1) - 1n) + 1n;   // ceil(sqrt(10^(digits-1))): p*q >= 10^(digits-1)
+    const FACTOR_MAX = 1n << BigInt(11 * factorWords);         // a factor must fit its words
+    let HIGH = isqrt(10n ** BigInt(digits) - 1n) + 1n;         // ceil(sqrt(10^digits)): p*q < 10^digits
+    if (FACTOR_MAX < HIGH) HIGH = FACTOR_MAX;
     const RANGE = HIGH - LOW;
-    const LIMIT = (2n ** 32n / RANGE) * RANGE;              // rejection threshold for the 32-bit sample
-    const WORD_MAX = 1n << BigInt(11 * words);              // N must fit in `words` words
+    if (RANGE < 100n) throw new Error('factor range too small for ' + digits + ' digits');
+    const LIMIT = (2n ** 32n / RANGE) * RANGE;                 // rejection threshold for the 32-bit sample
+    const WORD_MAX = 1n << BigInt(11 * words);                 // N must fit in `words` words
     if (WORD_MAX <= 10n ** BigInt(digits - 1)) throw new Error('word count too small for ' + digits + ' digits');
-    if ((1n << BigInt(11 * factorWords)) < HIGH) throw new Error('factor word count too small for ' + fd + '-digit factors');
     if (groups.reduce((a, b) => a + b, 0) !== digits) throw new Error('digit groups must add up to ' + digits);
-    return { digits, factorDigits: fd, words, factorWords, groups, LOW, HIGH, RANGE, LIMIT, WORD_MAX };
+    return { digits, factorDigits: HIGH.toString().length - 1, words, factorWords, MIN_FERMAT: BigInt(minFermat), groups, LOW, HIGH, RANGE, LIMIT, WORD_MAX };
   }
+  // digits, words for N, words per factor, minimum Fermat iterations (§3.3), digit grouping
   const SIZES = {
-    10: makeSize(10, 3, 2, [3, 3, 4]),     // 5-digit factors; N < 2^33 so it fits 3 words; a factor fits 2
-    16: makeSize(16, 5, 3, [4, 4, 4, 4]),  // 8-digit factors; N < 10^16 < 2^55 always fits 5 words; a factor fits 3
+    5:  makeSize(5, 2, 1, 5, [5]),             // factors 100..316: 40 primes
+    7:  makeSize(7, 2, 1, 20, [3, 4]),         // factors 1000..2047 (one word each): 141 primes; N < 2^22 fits 2 words
+    8:  makeSize(8, 3, 2, 100, [4, 4]),        // factors 3163..9999
+    10: makeSize(10, 3, 2, 1000, [3, 3, 4]),   // factors 31623..99999; N < 2^33 so it fits 3 words
+    12: makeSize(12, 4, 2, 8000, [4, 4, 4]),   // factors 316228..999999
+    14: makeSize(14, 5, 3, 60000, [3, 3, 4, 4]),
+    16: makeSize(16, 5, 3, 700000, [4, 4, 4, 4]),  // factors 31622777..99999999
   };
+  const TIERS = [5, 7, 10, 16];
   const DEFAULT_DIGITS = 10;
   function size(digits) {
     const s = SIZES[digits === undefined ? DEFAULT_DIGITS : digits];
@@ -107,11 +115,11 @@
     return out;
   }
 
-  // farApart(p, q): Fermat's method, started at ceil(sqrt(pq)), reaches (p+q)/2 after
-  // (p+q)/2 - sqrt(pq) iterations; require at least MIN_FERMAT of them (SPEC.md §3.3).
+  // farApart(p, q, S): Fermat's method, started at ceil(sqrt(pq)), reaches (p+q)/2 after
+  // (p+q)/2 - sqrt(pq) iterations; require at least S of them (SPEC.md §3.3).
   // (p+q)/2 - sqrt(pq) >= S  <=>  p+q-2S >= 0 and (p+q-2S)^2 >= 4pq, exactly in integers.
-  function farApart(p, q) {
-    const s = p + q - 2n * MIN_FERMAT;
+  function farApart(p, q, S) {
+    const s = p + q - 2n * S;
     return s >= 0n && s * s >= 4n * p * q;
   }
 
@@ -137,7 +145,7 @@
     const seed = hexToBytes(seedHex);
     if (seed.length !== 32) throw new Error('seed must be 32 bytes');
     const p = derivePrime(seed, 'p' + sz.digits, sz, () => true);
-    const q = derivePrime(seed, 'q' + sz.digits, sz, f => f !== p && p * f < sz.WORD_MAX && farApart(p, f));
+    const q = derivePrime(seed, 'q' + sz.digits, sz, f => f !== p && p * f < sz.WORD_MAX && farApart(p, f, sz.MIN_FERMAT));
     return { p, q };
   }
 
@@ -281,7 +289,7 @@
   }
 
   root.SP = {
-    CHAIN, SIZES, DEFAULT_DIGITS, MIN_FERMAT, SMALL_PRIMES, size,
+    CHAIN, SIZES, TIERS, DEFAULT_DIGITS, SMALL_PRIMES, size,
     isPrime, nextPrime, farApart, derivePrime, deriveFactors, deriveN, personalSeed, derivePersonalN, PERSONAL_DOMAIN,
     roundAt, roundTime, roundToBytes, roundMessage, randomnessMatches,
     encodeN, encodeFactor, encodeWords, decodeWords, wordToIndex,

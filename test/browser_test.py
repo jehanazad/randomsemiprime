@@ -18,6 +18,10 @@ OFFLINE = '--offline' in sys.argv
 GENESIS, PERIOD = 1692803367, 3
 def round_time(r): return GENESIS + (r - 1) * PERIOD
 N_OF = {1: '3925560271', 20000000: '3744275237', 33470004: '2369393317'}   # 10-digit, SPEC v2
+N_ALL = {1: {'n5': '26797', 'n7': '2588479', 'n10': '3925560271', 'n16': '5693731326102091'},
+         20000000: {'n5': '47759', 'n7': '2836039', 'n10': '3744275237', 'n16': '4164114716467091'},
+         33470004: {'n5': '46001', 'n7': '1524599', 'n10': '2369393317', 'n16': '2187064387928197'}}
+# 33470004 at 7 digits: 1511 (rude) x 1009 (lawsuit), words "fringe humble"; at 5 digits: 157 (beauty) x 293 (caution), "actress involve"
 # round 1: 47317 (actual boy) x 82963 (agree list); round 20000000: 50989 (adapt toss) x 73433 (afford swamp)
 
 def fake_round(r):
@@ -68,14 +72,14 @@ with sync_playwright() as p:
         path = request.url.split('/api/', 1)[1]
         def js(body, status=200): route.fulfill(status=status, content_type='application/json', body=json.dumps(body))
         if path == 'status':
-            return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004),
+            return js({'count': 3, 'first': 1, 'last': 33470004, 'firstTime': round_time(1), 'lastTime': round_time(33470004), 'tiers': [5, 7, 10, 16],
                        'tick': {'started': {'at': 1793250000, 'budget': 45}, 'finished': {'at': 1793250004, 'ms': 4000, 'forward': 20, 'backward': 25}}})
         if path.startswith('n/'):
-            for r, n in N_OF.items():
-                if n == path[2:]:
-                    rows = [ROUNDS[r]]
+            for r, ns in N_ALL.items():
+                if path[2:] in ns.values():
+                    rows = [dict(ROUNDS[r], **ns)]
                     if r == 1: rows.append(fake_round(5))      # a bogus archive row that must be ignored
-                    return js({'n': n, 'rounds': rows})
+                    return js({'n': path[2:], 'digits': len(path[2:]), 'rounds': rows})
             return js({'error': 'not in archive'}, 404)
         if path.startswith('range?'):
             q = dict(kv.split('=') for kv in path[6:].split('&'))
@@ -119,6 +123,27 @@ with sync_playwright() as p:
     check(page.inner_text('#liveN').replace(' ', '') == newest_n and page.inner_text('#liveRound') == str(feed_rounds[0]), 'update focuses the newest round')
     check(page.inner_text('#updateBtn') == 'Up to date', 'update button idle again')
     check(page.inner_text('#liveWordsNote') == '(encoded as BIP39 big-endian)', 'words carry the BIP39 big-endian note')
+
+    # size tiers: the selector under the tabs changes every view; 10 is the default
+    tiers = [t.inner_text() for t in page.locator('#tierBar [role=radio]').all()]
+    check(tiers == ['5 digits', '7 digits', '10 digits', '16 digits'] and page.get_attribute('#tierBar [data-digits="10"]', 'aria-checked') == 'true', f'size selector offers 5, 7, 10, 16 with 10 selected ({tiers})')
+    check(page.inner_text('#tierNote') == '10 digits = 3 words; a factor is 5 digits or 2 words', 'tier note: ' + page.inner_text('#tierNote'))
+    page.click('#tierBar [data-digits="7"]')
+    if OFFLINE:
+        check(page.inner_text('#liveN') == '152 4599' and page.inner_text('#liveWords') == 'fringe humble', '7-digit tier shows the 7-digit number of the focused round: ' + page.inner_text('#liveN'))
+        check(all(len(m.inner_text().replace(' ', '')) == 7 for m in page.locator('#feedList li .n').all()), 'feed follows the tier')
+        check(page.inner_text('#tierNote') == '7 digits = 2 words; a factor is 3 digits or 1 word' and 'as 3 digits or 1 word each' in page.inner_text('#liveCard label[for=liveAnswer]'), 'labels follow the tier: ' + page.inner_text('#tierNote'))
+        page.click('#liveVerifyBtn'); page.fill('#liveAnswer', 'rude'); page.press('#liveAnswer', 'Enter')
+        check(page.inner_text('#liveResult') == 'Correct — 1511 is a factor of 152 4599.', 'one-word factor at 7 digits: ' + page.inner_text('#liveResult'))
+        page.fill('#liveAnswer', '1009 x 1511'); page.click('#liveCheckBtn')
+        check(page.inner_text('#liveResult').startswith('Correct — 1009 × 1511 = 152 4599.'), 'both 7-digit factors: ' + page.inner_text('#liveResult'))
+        page.click('#liveVerifyBtn')
+    page.click('#tierBar [data-digits="5"]')
+    if OFFLINE: check(page.inner_text('#liveN') == '46001' and page.inner_text('#liveWords') == 'actress involve', '5-digit tier: ' + page.inner_text('#liveN'))
+    page.click('#tierBar [data-digits="16"]')
+    if OFFLINE: check(page.inner_text('#liveN') == '2187 0643 8792 8197' and len(page.inner_text('#liveWords').split()) == 5, '16-digit tier: ' + page.inner_text('#liveN'))
+    page.click('#tierBar [data-digits="10"]')
+    check(page.inner_text('#liveN').replace(' ', '') == newest_n, 'back to 10 digits')
     follows = '''() => { const last = [...document.querySelectorAll('#liveWords span')].pop().getBoundingClientRect(), n = document.getElementById('liveWordsNote').getBoundingClientRect(), r = document.getElementById('liveWords').parentElement.getBoundingClientRect();
         const sameLine = n.left >= last.right && Math.abs(n.bottom - last.bottom) < 12, nextLine = n.top >= last.bottom - 2 && n.left - r.left < 2;
         return (sameLine || nextLine) && n.left < r.right - 100; }'''
@@ -199,11 +224,11 @@ with sync_playwright() as p:
     page.wait_for_function("document.getElementById('archiveStatus').textContent.startsWith('Archive: 3 rounds, from 1 ')", timeout=5000)
     check('to 33470004 (2026-10-28 18:49:36 UTC)' in page.inner_text('#archiveStatus') and page.inner_text('#archiveStatus').endswith('Last run 2026-10-29 05:00:04 UTC (+20 new, +25 older).'), 'archive coverage and last run are shown on How it Works: ' + page.inner_text('#archiveStatus'))
     page.click('nav [data-tab=verify]')
-    check(page.inner_text('#tab-verify label[for=vQuery]') == 'Enter a round number, a 10-digit number, or its 3 words.', 'verify prompt is one sentence')
+    check(page.inner_text('#tab-verify label[for=vQuery]').startswith('Enter a round number, a number of 5, 7, 10 or 16 digits, or its words.'), 'verify prompt names the sizes')
     check(not page.locator('#vCheckBtn').count() and page.is_visible('#vAnswer'), 'verify form has the factor field and a single Verify button')
     page.fill('#vQuery', '1'); page.press('#vQuery', 'Enter')
     page.wait_for_function("!document.getElementById('vCard').hidden", timeout=15000)
-    check(page.inner_text('#vrN') == '392 556 0271', 'verify by round number recomputes round 1 N from spec')
+    check(page.inner_text('#vrN') == '392 556 0271' and page.inner_text('#vrDigits') == '10', 'verify by round number recomputes round 1 N from spec at the selected size')
     check(page.inner_text('#vrSig') == 'BLS signature valid', 'verify tab: signature valid')
     check(page.inner_text('#vLookupMsg').startswith('Genuine: round 1 was the number showing from 2023-08-23 15:09:27 UTC for 3 s.'), 'round note names the time window')
     check(page.inner_text('#vResult') == 'No factors entered.', 'round verified with no factors given')
@@ -259,10 +284,25 @@ with sync_playwright() as p:
     check(err.startswith('this number is not in the archive.') and 'covers rounds 1 to 33470004' in err, f'unknown number explains archive coverage ({err})')
     msg, err = verify_query('123456789')
     check('round 123456789' in (msg + err).lower(), f'nine digits are read as a round number ({(msg or err)[:80]})')
-    msg, err = verify_query('hurdle refuse')
-    check('3 words' in err, 'two words are rejected')
+    msg, err = verify_query('abandon ability')
+    check(err.startswith('those words do not encode a 5- or 7-digit number'), 'two words outside the 5- and 7-digit ranges are rejected: ' + err)
+    msg, err = verify_query('hurdle refuse gorilla tiny')
+    check(err == 'a number is 2, 3 or 5 words (got 4)', 'four words are rejected: ' + err)
     msg, err = verify_query('hello world foo')
     check('unknown word' in err, 'non-wordlist words are rejected')
+    msg, err = verify_query('12345678901')
+    check(err == 'a number has 5, 7, 10 or 16 digits (got 11)', 'eleven digits are neither a tier nor a round: ' + err)
+    # other tiers through the archive; the page follows the size of the number
+    msg, err = verify_query('1524599')
+    check(msg.startswith('Genuine: round 33470004') and page.inner_text('#vrN') == '152 4599' and page.inner_text('#vrDigits') == '7' and page.get_attribute('#tierBar [data-digits="7"]', 'aria-checked') == 'true', f'a 7-digit number is found and selects the 7-digit size ({msg or err})')
+    msg, err = verify_query('fringe humble', 'lawsuit')
+    check(msg.startswith('Genuine: round 33470004') and page.inner_text('#vResult') == 'Correct — 1009 is a factor of 152 4599.', f'two words resolve to the 7-digit number; one-word factor checked ({page.inner_text("#vResult")})')
+    msg, err = verify_query('actress involve', 'beauty caution')
+    check(msg.startswith('Genuine: round 33470004') and page.inner_text('#vrDigits') == '5' and page.inner_text('#vResult').startswith('Correct — 157 × 293 = 46001.'), f'two words resolve to the 5-digit number ({page.inner_text("#vResult")})')
+    msg, err = verify_query('2187 0643 8792 8197')
+    check(msg.startswith('Genuine: round 33470004') and page.inner_text('#vrDigits') == '16' and len(page.inner_text('#vrWords').split()) == 5, '16-digit number resolves and shows 5 words')
+    page.click('#tierBar [data-digits="10"]')
+    check(page.is_hidden('#vCard'), 'changing the size clears the verify result')
     msg, err = verify_query('12x34')
     check(err.startswith('enter a round number'), 'garbage is rejected')
 
@@ -295,6 +335,13 @@ with sync_playwright() as p:
     vec_row = page.locator('#vRangeList li', has_text='round 20000000')
     check(vec_row.locator('.n').inner_text() == '374 427 5237' and vec_row.locator('.w').inner_text() == 'hurdle refuse gorilla', 'archive round shows its number and words')
     check(len(rows.nth(0).locator('.n').inner_text().replace(' ', '')) == 10, 'relay-fetched round shows a 10-digit number')
+    page.click('#tierBar [data-digits="7"]')
+    check(page.locator('#vRangeList li').count() == 0, 'changing the size clears the range list')
+    msg, err = lookup_range(utcs(t - 3), utcs(t + 8))
+    check(page.locator('#vRangeList li', has_text='round 20000000').locator('.n').inner_text() == '283 6039', 'range list follows the tier')
+    page.click('#tierBar [data-digits="10"]')
+    msg, err = lookup_range(utcs(t - 3), utcs(t + 8))
+    rows = page.locator('#vRangeList li'); vec_row = page.locator('#vRangeList li', has_text='round 20000000')
     page.evaluate("document.getElementById('vLookupMsg').textContent = ''")
     vec_row.locator('[data-verify]').click()
     page.wait_for_function("document.getElementById('vLookupMsg').textContent.length > 0", timeout=15000)

@@ -1,10 +1,10 @@
 # Prime Totem
 
-A fresh 10-digit semiprime (two 5-digit primes) every 3 seconds, derived deterministically from
-the [drand](https://drand.love) quicknet randomness beacon, for live tests of mental factoring.
-The size is a parameter of the derivation (`SPEC.md` §2 defines 10 and 16 digits; the page
-shows 10), and the two primes are kept far enough apart that Fermat's method needs at least
-1,000 iterations.
+A fresh balanced semiprime every 3 seconds, derived deterministically from the
+[drand](https://drand.love) quicknet randomness beacon, for live tests of mental factoring.
+The page offers four sizes, 5, 7, 10 (the default, two 5-digit primes) and 16 digits, each
+derived independently from the same round (`SPEC.md` §2 also defines 8, 12 and 14), and the two
+primes are kept far enough apart that Fermat's method is never the easy way in.
 Live at [primetotem.com](https://primetotem.com) (randomsemiprime.com redirects there).
 
 Because each number is a fixed function of a signed, timestamped beacon round that nobody
@@ -19,16 +19,18 @@ network access to a drand relay (`api.drand.sh`, `api2.drand.sh`, `api3.drand.sh
 archive (`/api/*`, see below), which exists only on the deployed site; everything else runs in
 the browser.
 
-1. **Generate** shows the number from the round that was current when you arrived, as 10 digits and
-   as 3 words. It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
+1. **Generate** shows the number from the round that was current when you arrived, as digits
+   and as words (10 digits and 3 words by default; the size selector under the tabs switches
+   every view to 5, 7, 10 or 16 digits). It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
    **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
    number with the newest round.
-2. **Verify** takes a round number, a 10-digit number (spaces between digit groups are
-   fine), or its 3 words. A round number is
+2. **Verify** takes a round number, a number of any tier's length (spaces between digit groups
+   are fine), or its words; the length or the decoded value says which size it is, and the page
+   switches to it. A round number is shown at the selected size. A round number is
    fetched from drand; a number or words are looked up in the archive to find their round. Either
    way the round's BLS signature is checked in the browser, the number is re-derived, and the
    result says which 3-second window the number was showing in. One or two factors can be
-   entered alongside, as 5 digits or 2 words each; each is checked by division and the verdict says
+   entered alongside, as digits or words; each is checked by division and the verdict says
    whether it is correct, partly correct (one of two), or wrong. The same check is available
    under the number on **Generate** via its **Verify** button. The page never shows the factors.
    **Generate a personal totem** at the top right takes a passphrase and derives a personal number from the round
@@ -54,19 +56,21 @@ August 2023, so full backfill takes a long time at the default budget; raise it 
 A failed relay request stops that run's backfill at the failed round, so the archive never has
 holes between its first and last round.
 
-The archive only maps a number to a round and stores the round's randomness and signature. The
+The archive maps a number at each tier (columns `n5`, `n7`, `n10`, `n16`) to its round and stores
+the round's randomness and signature. The
 Worker checks `randomness = SHA-256(signature)` but not the BLS signature (that would exceed the
 free plan's 10 ms of CPU per run); the page re-verifies the signature itself, so a wrong or
 tampered archive row is rejected in the browser and never shown as genuine. Distinct rounds can
-share a number (with 10-digit numbers, within any few hours of rounds), so a lookup by number
-returns every round that produced it. Budget note: the whole tick is CPU-light (about 4 ms for 45 rounds in Node), but if
+share a number (at 10 digits within any few hours of rounds; at 5 digits constantly), so a
+lookup by number returns every round that produced it. Budget note: the whole tick is CPU-light (about 4 ms for 45 rounds in Node), but if
 the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BUDGET`. D1 calls
 count against a separate, higher limit and are not budgeted.
 
 Each tick records when it started and how it ended in the `meta` table, and `/api/status` (and
 the last line of the How it Works tab) report it, so the cron's health is visible without log access.
 
-API: `GET /api/status`, `GET /api/n/<10 digits>` (`{n, rounds: [...]}`, newest first),
+API: `GET /api/status`, `GET /api/n/<digits>` (`{n, digits, rounds: [...]}`, newest first; the
+length picks the tier),
 `GET /api/round/<round>`, `GET /api/range?from=<round>&to=<round>` (at most 100 rounds).
 Schema: `schema.sql`.
 
@@ -77,7 +81,7 @@ python3 verify.py 33470004            # fetch the round, check it, derive N and 
 python3 verify.py --json round.json   # same, offline
 python3 verify.py --check 33470004 73037
 python3 verify.py --check 33470004 afford predict
-python3 verify.py --digits 16 33470004   # the 16-digit number of the same round
+python3 verify.py --digits 7 33470004    # the 7-digit number of the same round (5, 7, 10, 16 and more)
 python3 verify.py --passphrase 'open sesame' 33470004   # the personal number for that passphrase
 python3 verify.py --vectors           # print derivations for test-vectors.json, every size
 ```
@@ -144,8 +148,11 @@ and the page says the archive is unavailable.
   cheating with a hidden device. The test is only meaningful if the person being tested has
   no device and no confederate.
 - The factors are kept apart (`SPEC.md` §3.3) so that Fermat's method, the one shortcut that
-  works by hand when the factors are close, needs at least 1,000 iterations. Trial division
-  needs thousands of divisions too. Nothing stops a device.
+  works by hand when the factors are close, needs about as many iterations as trial division
+  needs divisions: over a thousand at 10 digits. Nothing stops a device.
+- Smaller sizes prove less. At 7 digits there are 141 possible factors, a few minutes' work for
+  a trained calculator; at 5 digits there are 40, and only a few hundred distinct numbers. The
+  How it Works tab says what each tier shows.
 - The page never displays the factors; it only checks answers. That is a courtesy against
   shoulder-surfing, not a secret: anyone with the round number and the spec can compute them.
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prime Totem</title>
 <link rel="icon" href="data:,">
-<meta name="description" content="Fresh 10-digit semiprimes derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
+<meta name="description" content="Fresh semiprimes of 5, 7, 10 or 16 digits derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
 <style>
   :root {
     --bg: #f6f5f1; --fg: #1a1a1a; --muted: #6b6b66; --line: #d9d7d0; --card: #ffffff;
@@ -24,7 +24,12 @@
   main { max-width: 760px; margin: 0 auto; }
   header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 20px 0 12px; }
   h1 { font-size: 20px; margin: 0; letter-spacing: .01em; }
-  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .tierbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 16px; }
+  .tierbar .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .tierbar .seg button { background: none; border: 0; border-left: 1px solid var(--line); color: var(--fg); padding: 6px 12px; font: inherit; cursor: pointer; }
+  .tierbar .seg button:first-child { border-left: 0; }
+  .tierbar .seg button[aria-checked=true] { background: var(--accent); color: #fff; }
   nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px; font: inherit; cursor: pointer; }
   nav button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
   section[hidden] { display: none; }
@@ -88,6 +93,16 @@
     <button role="tab" aria-selected="true" data-tab="live">Generate</button>
     <button role="tab" aria-selected="false" data-tab="verify">Verify</button>
   </nav>
+  <div class="tierbar">
+    <span class="small">Size</span>
+    <div class="seg" id="tierBar" role="radiogroup" aria-label="number size">
+      <button role="radio" aria-checked="false" data-digits="5">5 digits</button>
+      <button role="radio" aria-checked="false" data-digits="7">7 digits</button>
+      <button role="radio" aria-checked="true" data-digits="10">10 digits</button>
+      <button role="radio" aria-checked="false" data-digits="16">16 digits</button>
+    </div>
+    <span class="small" id="tierNote"></span>
+  </div>
 
   <!-- ================= LIVE ================= -->
   <section id="tab-live">
@@ -109,9 +124,9 @@
         <span class="small">This number stays until you press Update.</span>
       </div>
       <div id="liveCheck" hidden>
-        <label class="small" for="liveAnswer" style="display:block;margin-top:10px">Factors to check: one or two, as 5 digits or 2 words each. The factors are never shown, only whether yours divide the number.</label>
+        <label class="small" for="liveAnswer" style="display:block;margin-top:10px">Factors to check: one or two, as <span class="factorForm"></span> each. The factors are never shown, only whether yours divide the number.</label>
         <div class="row" style="margin-top:6px">
-          <input type="text" id="liveAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 73037   or   afford predict" style="flex:1 1 260px">
+          <input type="text" id="liveAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factor" style="flex:1 1 260px">
           <button class="primary" id="liveCheckBtn">Check</button>
         </div>
         <div class="result" id="liveResult"></div>
@@ -127,7 +142,7 @@
           <div class="N" id="personalN"></div>
           <div class="words" id="personalWords"></div>
           <div class="row" style="margin-top:0">
-            <input type="text" id="personalAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factors to check: one or two, 5 digits or 2 words each" style="flex:1 1 260px">
+            <input type="text" id="personalAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factors to check" style="flex:1 1 260px">
             <button class="primary" id="personalCheckBtn">Check</button>
             <button class="secondary icon" id="personalCopyBtn" title="Copy record" aria-label="Copy record"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
@@ -155,13 +170,13 @@
   <!-- ================= VERIFY ================= -->
   <section id="tab-verify" hidden>
     <div class="card">
-      <label class="small" for="vQuery" style="display:block">Enter a round number, a 10-digit number, or its 3 words.</label>
-      <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · 10 digits (spaces allowed) · three words" style="margin-top:6px">
+      <label class="small" for="vQuery" style="display:block">Enter a round number, a number of 5, 7, 10 or 16 digits, or its words. A round number shows the size selected above.</label>
+      <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · the digits (spaces allowed) · the words" style="margin-top:6px">
       <label class="small" for="vPhrase" style="display:block;margin-top:10px">Passphrase (optional): re-derives the personal number of a round. Needs the round number, since personal numbers are never in the archive.</label>
       <input type="text" id="vPhrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="passphrase" style="margin-top:6px">
-      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Factors (optional): one or two, as 5 digits or 2 words each.</label>
+      <label class="small" for="vAnswer" style="display:block;margin-top:10px">Factors (optional): one or two, as <span class="factorForm"></span> each.</label>
       <div class="row" style="margin-top:6px">
-        <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. 73037   or   afford predict" style="flex:1 1 260px">
+        <input type="text" id="vAnswer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="factor" style="flex:1 1 260px">
         <button class="primary" id="vFetchBtn">Verify</button>
       </div>
       <div class="err small" id="vErr"></div>
@@ -170,6 +185,7 @@
       <div class="status">
         <span>round <b id="vrRound"></b></span>
         <span><b id="vrTime"></b> UTC</span>
+        <span><b id="vrDigits"></b> digits</span>
         <span id="vrSig" class="pill"></span>
         <span id="vrRand" class="pill"></span>
       </div>
@@ -216,29 +232,38 @@
   <section id="tab-about" hidden>
     <div class="card">
       <h3 style="margin-top:0">What a prime totem is for</h3>
-      <p>A prime totem is a single-use tool to confirm access to superhuman computation. It is the product of two 5-digit prime numbers: a 10-digit balanced semiprime. There is no record of a human factoring a balanced 10-digit semiprime mentally in a short time, so a prompt correct answer reflects superhuman computation. A shorter number would not do: a 7-digit semiprime has only 141 possible prime factors, so trial division finds one in a few minutes of mental arithmetic, while a 10-digit one has over 6,000 and needs thousands of divisions. This page continually generates fresh totems, which can be given to an entity to check whether it has superhuman computational ability.</p>
+      <p>A prime totem is a single-use tool to confirm access to superhuman computation. It is a balanced semiprime: the product of two prime numbers of about the same size. The default is 10 digits, the product of two 5-digit primes. There is no record of a human factoring a balanced 10-digit semiprime mentally in a short time, so a prompt correct answer reflects superhuman computation. This page continually generates fresh totems, which can be given to an entity to check whether it has superhuman computational ability.</p>
+      <h3>Sizes</h3>
+      <p>The size selector under the tabs offers four tiers, for when a bigger number cannot or will not be memorized. Smaller is weaker: with fewer possible prime factors, trial division gets short.</p>
+      <ul>
+        <li><b>16 digits</b>, 5 words: 3.8 million possible factors. Out of reach without a device.</li>
+        <li><b>10 digits</b>, 3 words: about 6,000 possible factors and over a thousand trial divisions on a typical number. Hours of flawless mental arithmetic, with no record of anyone doing it. The recommended test.</li>
+        <li><b>7 digits</b>, 2 words: 141 possible factors, each one word. A trained mental calculator finds one in a few minutes, anyone with paper in a quarter of an hour. Shows real work, not superhuman work.</li>
+        <li><b>5 digits</b>, 2 words: 40 possible factors and only a few hundred distinct totems, which could be memorized outright. A floor for when nothing bigger will do: it shows the totem is fresh and the entity can factor at all, nothing more.</li>
+      </ul>
       <p>The test is only meaningful if the entity could not have known the number in advance. So every totem comes from the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon, a public source of randomness that publishes a new signed round every 3 seconds and that nobody, this site included, can predict or steer. Each round is turned into one totem by a fixed, public rule, so the number showing at any moment was the only number that could have shown, and it did not exist before that moment.</p>
       <h3>How to run a test</h3>
       <ol>
         <li>Open <b>Generate</b>. The 10 digits displayed are the semiprime for the round that was current when the page loaded; it stays until you press <b>Update</b>. Grouped like a phone number, it can be memorized the same way. The round line below shows round number and timestamp. Newer rounds keep arriving in the list below, newest first.</li>
-        <li>Give the entity the 10 digits and say what form the answer should take. For example: <i>"Please give one prime factor of this 10-digit number: ### ### ####. Answer with five digits."</i> One factor is enough to show superhuman computation; two are also accepted.</li>
-        <li>To check an answer on the spot, press <b>Verify</b> under the number and enter one factor or both, 5 digits each. The page says whether each entered value divides the number evenly, and therefore is a prime factor.</li>
-        <li>To check later, or to check someone else's test, go to <b>Verify</b> and enter the 10 digits or the round number, plus the factors if you have them. The round is fetched and its signature checked in your browser, then the factors are checked by division.</li>
+        <li>Give the entity the digits and say what form the answer should take. For example, at 10 digits: <i>"Please give one prime factor of this 10-digit number: ### ### ####. Answer with five digits."</i> One factor is enough to show superhuman computation; two are also accepted.</li>
+        <li>To check an answer on the spot, press <b>Verify</b> under the number and enter one factor or both. The page says whether each entered value divides the number evenly, and therefore is a prime factor.</li>
+        <li>To check later, or to check someone else's test, go to <b>Verify</b> and enter the digits or the round number, plus the factors if you have them. The round is fetched and its signature checked in your browser, then the factors are checked by division. A number's length says which size it is; a round number shows the size selected under the tabs.</li>
         <li>If you expect to need a totem when you don't have internet access (such as in a dream), you can memorize one ahead of time. Do not compute the factors ahead of time yourself. A memorized totem is only as fresh as your secrecy: anyone who has heard it could factor it with a device, so keep it to yourself and use a new one for each test. Just remember the answer(s) you are given and verify them later.</li>
       </ol>
       <h3>What it does and doesn't prove</h3>
-      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester, and verifiable by anyone later from the round's signature. It does not stop an electronic device from factoring a 10-digit number instantly, so the entity must have no device and no confederate. The factors are public in principle, since anyone with the round number and the rule can compute them, though this page never shows them.</p>
+      <p>It proves the number is fresh: not precomputed, not memorized, not chosen by the tester, and verifiable by anyone later from the round's signature. It does not stop an electronic device from factoring any of these numbers instantly, so the entity must have no device and no confederate. The factors are public in principle, since anyone with the round number and the rule can compute them, though this page never shows them.</p>
       <h3>The rule (SPEC.md v2)</h3>
       <ol>
         <li>Fetch round <i>r</i> from quicknet; verify its BLS signature against the chain's public key and that <code>randomness = SHA-256(signature)</code>.</li>
         <li>For tag <code>"p10"</code>, then <code>"q10"</code>: compute <code>SHA-256(randomness ‖ tag ‖ ctr)</code> with a one-byte counter starting at 0; take the first 4 bytes as a big-endian integer <i>x</i>; reject and increment the counter if <i>x</i> ≥ 4 294 964 501; otherwise the candidate is <code>31623 + (x mod 68377)</code>.</li>
         <li>The factor is the smallest prime ≥ candidate (primality by trial division to 10⁴, which is exact below 10⁸). Reject if it reaches 10⁵. For <i>q</i>, also reject if it equals <i>p</i>, if <i>p·q</i> ≥ 2³³ (the number would not fit in three words), or if the two are too close together: Fermat's method finds factors near √<i>N</i> quickly, so it must need at least 1 000 iterations, i.e. <code>(p+q)/2 − √(p·q) ≥ 1000</code>.</li>
-        <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits. Other sizes use the same rule with their own bounds and tags (16 digits with 8-digit factors and 5 words is also defined), so one round can yield a number of each size; this page shows the 10-digit one.</li>
+        <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits.</li>
+        <li>Every size follows the same rule with its own tags (<code>"p5"</code>, <code>"p7"</code>, <code>"p16"</code>, …) and bounds: factors from ⌈√(10<sup>D−1</sup>)⌉ up to ⌈√(10<sup>D</sup>)⌉, capped so that a factor fits its words (so 7-digit numbers have factors from 1000 to 2047), and a Fermat minimum of 5, 20, 1 000 and 700 000 iterations for 5, 7, 10 and 16 digits. One round therefore yields a number of each size, derived independently.</li>
       </ol>
       <h3>Personal numbers</h3>
       <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Generate a personal totem</b> at the top right of the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase. The copy button beside a number puts a short note on the clipboard: the number, its words, the passphrase for a personal number, the round and its time. Keep a personal note private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
       <h3>Words</h3>
-      <p>The number is also shown as 3 words from the BIP39 English list (base-2048, 11 bits per word, big-endian), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as 2 words, and the Verify fields accept words wherever they accept digits. The script then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
+      <p>The number is also shown as words from the BIP39 English list (base-2048, 11 bits per word, big-endian; 2, 2, 3 or 5 words for 5, 7, 10 or 16 digits), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as words (one word at 5 and 7 digits, two at 10, three at 16), and the Verify fields accept words wherever they accept digits. The script at 10 digits then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
       <h3>Verify independently</h3>
       <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>. A number or its words can be traced back to their round through this site's archive, which only names the round; the signature is always re-checked in your browser.</p>
       <p class="small" id="archiveStatus"></p>
@@ -297,8 +322,33 @@
     if (!/^[0-9a-f]{64}$/.test(randomness) || !/^[0-9a-f]{96}$/.test(signature)) throw new Error('malformed beacon');
     const sigOk = __noble.verifyRound(signature, SP.roundMessage(round), CHAIN.publicKey, CHAIN.DST);
     const randOk = SP.randomnessMatches(randomness, signature);
-    return { round, randomness, signature, sigOk, randOk, time: SP.roundTime(round), N: SP.deriveN(randomness) };
+    return { round, randomness, signature, sigOk, randOk, time: SP.roundTime(round) };
   }
+  // N of a validated round at a size (the current tier unless given). Cheap, so never cached.
+  function nOf(b, digits) { return SP.deriveN(b.randomness, digits === undefined ? tier : digits); }
+
+  // ---------- size (tier) ----------
+  // One size is current for the whole page: Generate, the feed, personal numbers, records, and
+  // Verify by round number. Verifying by a number or its words switches to that number's size.
+  let tier = SP.DEFAULT_DIGITS;
+  const plural = (n, w) => n + ' ' + (n === 1 ? w : w + 's');
+  function factorForm(d) { const z = SP.size(d); return plural(z.factorDigits, 'digit') + ' or ' + plural(z.factorWords, 'word'); }
+  function applyTier() {
+    const z = SP.size(tier);
+    document.querySelectorAll('#tierBar [role=radio]').forEach(b => b.setAttribute('aria-checked', String(Number(b.dataset.digits) === tier)));
+    $('tierNote').textContent = plural(z.digits, 'digit') + ' = ' + plural(z.words, 'word') + '; a factor is ' + factorForm(tier);
+    document.querySelectorAll('.factorForm').forEach(e => { e.textContent = factorForm(tier); });
+    const ph = 'one or two factors, ' + factorForm(tier) + ' each';
+    $('liveAnswer').placeholder = ph; $('personalAnswer').placeholder = ph; $('vAnswer').placeholder = ph;
+  }
+  function setTier(d) {
+    if (d === tier) return;
+    tier = d;
+    applyTier();
+    if (focused) renderFocused(); else renderFeed();
+    $('vCard').hidden = true; $('vRangeList').innerHTML = ''; $('vRangeMsg').textContent = '';
+  }
+  $('tierBar').addEventListener('click', e => { const b = e.target.closest('[data-digits]'); if (b) setTier(Number(b.dataset.digits)); });
 
   // ---------- live ticker ----------
   // `latest` is the newest validated round seen. `focused` is the one shown large: the first
@@ -312,11 +362,12 @@
     $('liveRound').textContent = b.round;
     $('liveTime').textContent = utc(b.time);
     setPill($('liveSig'), 'ok', 'drand sig ✓');
-    $('liveN').textContent = SP.formatN(b.N);
-    renderWords($('liveWords'), SP.encodeN(b.N));
+    const N = nOf(b);
+    $('liveN').textContent = SP.formatN(N, tier);
+    renderWords($('liveWords'), SP.encodeN(N, tier));
     $('liveVerifyBtn').disabled = false; $('livePersonalBtn').disabled = false; $('liveCopyBtn').disabled = false;
     $('liveAnswer').value = ''; $('liveResult').textContent = ''; $('liveResult').className = 'result';   // a new number: old verdict no longer applies
-    $('personalBlock').hidden = true; personal = null;                                                   // a personal number is bound to its round
+    $('personalBlock').hidden = true; personal = null;                                                   // a personal number is bound to its round and size
     $('liveRecordBox').hidden = true;
     renderUpdateBtn();
     renderFeed();
@@ -327,11 +378,11 @@
     $('updateBtn').textContent = behind > 0 ? 'Update (' + behind + ' newer)' : 'Up to date';
   }
   function renderFeed() {
-    $('feedList').innerHTML = feed.map(b =>
+    $('feedList').innerHTML = feed.map(b => { const N = nOf(b); return (
       '<li data-round="' + b.round + '" title="Show this round"' + (focused && b.round === focused.round ? ' class="focused"' : '') + '>' +
-      '<span class="n">' + SP.formatN(b.N) + '</span>' +
+      '<span class="n">' + SP.formatN(N, tier) + '</span>' +
       '<span class="meta">round ' + b.round + ' · ' + utc(b.time).slice(11) + ' UTC</span>' +
-      '<span class="w">' + SP.encodeN(b.N).join(' ') + '</span></li>').join('');
+      '<span class="w">' + SP.encodeN(N, tier).join(' ') + '</span></li>'); }).join('');
     $('feedCount').textContent = feed.length;
   }
   async function tick() {
@@ -363,7 +414,7 @@
     $('liveVerifyBtn').setAttribute('aria-expanded', String(open));
     if (open) $('liveAnswer').focus();
   });
-  $('liveCheckBtn').addEventListener('click', () => { if (focused) renderVerdict($('liveResult'), focused.N, $('liveAnswer').value); });
+  $('liveCheckBtn').addEventListener('click', () => { if (focused) renderVerdict($('liveResult'), nOf(focused), tier, $('liveAnswer').value); });
   $('liveAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('liveCheckBtn').click(); });
 
   // ---------- personal numbers (SPEC.md §8): derived here from the focused round and a passphrase ----------
@@ -379,24 +430,24 @@
     const phrase = $('livePhrase').value;
     if (!phrase) { $('liveErr').textContent = 'enter a passphrase'; return; }
     $('liveErr').textContent = '';
-    const N = SP.derivePersonalN(focused.randomness, phrase);
-    personal = { round: focused.round, N, passphrase: phrase };
+    const N = SP.derivePersonalN(focused.randomness, phrase, tier);
+    personal = { round: focused.round, N, passphrase: phrase, digits: tier };
     $('personalRound').textContent = focused.round; $('personalRound2').textContent = focused.round;
-    $('personalN').textContent = SP.formatN(N);
-    renderWords($('personalWords'), SP.encodeN(N));
+    $('personalN').textContent = SP.formatN(N, tier);
+    renderWords($('personalWords'), SP.encodeN(N, tier));
     $('personalAnswer').value = ''; $('personalResult').textContent = ''; $('personalResult').className = 'result';
     $('personalBlock').hidden = false;
   });
   $('livePhrase').addEventListener('keydown', e => { if (e.key === 'Enter') $('liveDeriveBtn').click(); });
-  $('personalCheckBtn').addEventListener('click', () => { if (personal) renderVerdict($('personalResult'), personal.N, $('personalAnswer').value); });
+  $('personalCheckBtn').addEventListener('click', () => { if (personal) renderVerdict($('personalResult'), personal.N, personal.digits, $('personalAnswer').value); });
   $('personalAnswer').addEventListener('keydown', e => { if (e.key === 'Enter') $('personalCheckBtn').click(); });
 
   // A record is a few lines of plain text: the number, its words, the passphrase for a personal
   // number, the round and its time. It is copied to the clipboard when the browser allows, and
   // shown in a box either way.
   function record(b, pers) {
-    const N = pers ? pers.N : b.N;
-    return [SP.formatN(N), SP.encodeN(N).join(' ')].concat(pers ? ['passphrase: ' + pers.passphrase] : [])
+    const N = pers ? pers.N : nOf(b);
+    return [SP.formatN(N, tier), SP.encodeN(N, tier).join(' ')].concat(pers ? ['passphrase: ' + pers.passphrase] : [])
       .concat(['round ' + b.round, utc(b.time) + ' UTC']).join('\n');
   }
   async function showRecord(text, what) {
@@ -427,13 +478,13 @@
   // ---------- factor checking (Generate card and Verify tab) ----------
   // Writes a verdict for `text` (one or two factors) against N into `out`. Only division is
   // used; the factors of N are never computed or shown. Empty text is reported as such.
-  function renderVerdict(out, N, text) {
+  function renderVerdict(out, N, digits, text) {
     if (!text.trim()) { out.className = 'result none'; out.textContent = 'No factors entered.'; return; }
     let factors;
-    try { factors = SP.parseAnswer(text).factors; } catch (e) { out.className = 'result bad'; out.textContent = e.message; return; }
+    try { factors = SP.parseAnswer(text, digits).factors; } catch (e) { out.className = 'result bad'; out.textContent = e.message; return; }
     const r = SP.checkFactors(N, factors);
     const [a, b] = r.each;
-    const Ns = SP.formatN(N);
+    const Ns = SP.formatN(N, digits);
     if (factors.length === 1) {
       out.className = 'result ' + (a.ok ? 'ok' : 'bad');
       out.textContent = a.ok ? 'Correct — ' + a.f + ' is a factor of ' + Ns + '.' : 'Wrong — ' + a.f + ' is not a factor of ' + Ns + '.';
@@ -480,25 +531,26 @@
   }
 
   // ---------- verify tab ----------
-  function showVerified(b, note, phrase) {
-    $('vrRound').textContent = b.round;
+  function showVerified(b, note, phrase, digits) {
+    const N = nOf(b, digits);
+    $('vrRound').textContent = b.round; $('vrDigits').textContent = digits;
     $('vrTime').textContent = utc(b.time);
     setPill($('vrSig'), b.sigOk ? 'ok' : 'bad', b.sigOk ? 'BLS signature valid' : 'BLS signature INVALID');
     setPill($('vrRand'), b.randOk ? 'ok' : 'bad', b.randOk ? 'randomness = SHA-256(sig)' : 'randomness MISMATCH');
-    $('vrN').textContent = SP.formatN(b.N);
-    renderWords($('vrWords'), SP.encodeN(b.N));
+    $('vrN').textContent = SP.formatN(N, digits);
+    renderWords($('vrWords'), SP.encodeN(N, digits));
     $('vrRandHex').textContent = b.randomness;
     $('vLookupMsg').textContent = note || '';
     // With a passphrase the factors are checked against the personal number, which is the one under test.
     if (phrase) {
-      const N = SP.derivePersonalN(b.randomness, phrase);
-      $('vrPersonalN').textContent = SP.formatN(N);
-      renderWords($('vrPersonalWords'), SP.encodeN(N));
-      renderVerdict($('vPersonalResult'), N, $('vAnswer').value);
+      const P = SP.derivePersonalN(b.randomness, phrase, digits);
+      $('vrPersonalN').textContent = SP.formatN(P, digits);
+      renderWords($('vrPersonalWords'), SP.encodeN(P, digits));
+      renderVerdict($('vPersonalResult'), P, digits, $('vAnswer').value);
       $('vResult').textContent = ''; $('vResult').className = 'result';
       $('vrPersonal').hidden = false;
     } else {
-      renderVerdict($('vResult'), b.N, $('vAnswer').value);
+      renderVerdict($('vResult'), N, digits, $('vAnswer').value);
       $('vrPersonal').hidden = true;
     }
     $('vCard').hidden = false; $('vErr').textContent = '';
@@ -507,30 +559,38 @@
     return (b.sigOk && b.randOk ? 'Genuine: round ' + b.round + ' was the number showing from ' + utc(b.time) + ' UTC for ' + CHAIN.period + ' s.'
                                 : 'Round ' + b.round + ' failed verification; do not trust this number.') + (how ? ' ' + how : '');
   }
-  // A query is a round number, an N of SIZE.digits digits, or its SIZE.words words. Returns {round} or
-  // {N}; throws with a readable message. A string of exactly SIZE.digits digits is always read as N
-  // (round numbers have fewer digits for decades to come).
-  const SIZE = SP.size();
-  const NUM_MIN = 10n ** BigInt(SIZE.digits - 1), NUM_MAX = 10n ** BigInt(SIZE.digits);
+  // A query is a round number, an N of a tier's digit count, or its words. Returns {round} or
+  // {N, digits}; throws with a readable message. A digit string whose length is a tier is always
+  // read as N; a round number is at most 9 digits (quicknet needs decades to reach 10^9 rounds).
+  const TIERS = SP.TIERS;
+  const orList = a => a.join(', ').replace(/, (\d+)$/, ' or $1');
+  const tierList = orList(TIERS);
+  const wordCounts = orList(TIERS.map(d => SP.size(d).words).filter((w, i, a) => a.indexOf(w) === i));
+  const inRange = (N, d) => N >= 10n ** BigInt(d - 1) && N < 10n ** BigInt(d);
   function parseQuery(text) {
     let t = text.trim();
     if (/^[\d\s]+$/.test(t)) t = t.replace(/\s+/g, '');     // digits may be grouped, e.g. "236 939 3317"
-    if (t.length === SIZE.digits && /^\d+$/.test(t)) return { N: BigInt(t) };
-    if (/^\d{1,12}$/.test(t) && t.length < SIZE.digits) { const r = Number(t); if (r < 1) throw new Error('round numbers start at 1'); return { round: r }; }
+    if (/^\d+$/.test(t)) {
+      if (TIERS.includes(t.length)) return { N: BigInt(t), digits: t.length };
+      if (t.length <= 9) { const r = Number(t); if (r < 1) throw new Error('round numbers start at 1'); return { round: r }; }
+      throw new Error('a number has ' + tierList + ' digits (got ' + t.length + ')');
+    }
     if (/^[a-zA-Z]+(\s+[a-zA-Z]+)*$/.test(t)) {
       const ws = t.split(/\s+/);
-      if (ws.length !== SIZE.words) throw new Error('a number is ' + SIZE.words + ' words (got ' + ws.length + ')');
       const N = SP.decodeWords(ws);
-      if (N < NUM_MIN || N >= NUM_MAX) throw new Error('those words do not encode a ' + SIZE.digits + '-digit number');
-      return { N };
+      const sizes = TIERS.filter(d => SP.size(d).words === ws.length);
+      if (!sizes.length) throw new Error('a number is ' + wordCounts + ' words (got ' + ws.length + ')');
+      const d = sizes.find(d => inRange(N, d));
+      if (d === undefined) throw new Error('those words do not encode a ' + sizes.join('- or ') + '-digit number');
+      return { N, digits: d };
     }
-    throw new Error('enter a round number, a ' + SIZE.digits + '-digit number, or its ' + SIZE.words + ' words');
+    throw new Error('enter a round number, a number of ' + tierList + ' digits, or its words');
   }
   // Both return {b, how} without touching the page, so a stale request can be dropped.
   async function verifyByRound(r) {
     return { b: validateBeacon(await fetchRound(r)), how: 'Fetched from the drand relays; signature checked in your browser.' };
   }
-  async function verifyByN(N) {
+  async function verifyByN(N, digits) {
     const res = await apiGet('/api/n/' + N);
     const rows = (res && res.rounds) || [];
     if (!rows.length) throw new Error('this number is not in the archive.' + coverage() + ' If you know the round number or when it was shown, use those instead.');
@@ -539,9 +599,9 @@
     for (const row of rows) {
       let b = null;
       try { b = validateBeacon(row); } catch (e) { b = null; }
-      if (b && b.sigOk && b.randOk && b.N === N) good.push(b); else bad.push(Number(row && row.round));
+      if (b && b.sigOk && b.randOk && nOf(b, digits) === N) good.push(b); else bad.push(Number(row && row.round));
     }
-    const plural = (n, w) => n === 1 ? w : w + 's';
+    const plural = (n, w) => n === 1 ? w : w + 's';   // (bare word form, unlike the page-level helper)
     if (!good.length) throw new Error('the archive returned ' + plural(bad.length, 'round') + ' ' + bad.join(', ') + ' for this number, but ' + (bad.length === 1 ? 'it does not verify' : 'none of them verify') + '; refusing to show it');
     const b = good[0];
     let how = 'Found in the archive; signature checked in your browser.';
@@ -557,10 +617,12 @@
     try { q = parseQuery($('vQuery').value); } catch (e) { $('vErr').textContent = e.message; return; }
     if (phrase && !q.round) { $('vErr').textContent = 'a personal number is re-derived from its round number: enter the round, not the number'; return; }
     $('vErr').textContent = q.round ? 'fetching round ' + q.round + '…' : 'looking up ' + q.N + '…';
+    const digits = q.round ? tier : q.digits;
     try {
-      const r = q.round ? await verifyByRound(q.round) : await verifyByN(q.N);
+      const r = q.round ? await verifyByRound(q.round) : await verifyByN(q.N, digits);
       if (seq !== verifySeq) return;
-      showVerified(r.b, roundNote(r.b, r.how), phrase);
+      if (!q.round) setTier(digits);                  // the page follows the size of the number looked up
+      showVerified(r.b, roundNote(r.b, r.how), phrase, digits);
     } catch (e) {
       if (seq !== verifySeq) return;
       $('vErr').textContent = (q.round ? 'could not fetch/verify round ' + q.round + ': ' : '') + (e.message || e);
@@ -571,7 +633,7 @@
   $('vPhrase').addEventListener('keydown', e => { if (e.key === 'Enter') $('vFetchBtn').click(); });
   $('vJsonBtn').addEventListener('click', () => {
     verifySeq++;
-    try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.'), $('vPhrase').value); }
+    try { const b = validateBeacon(JSON.parse($('vJson').value)); showVerified(b, roundNote(b, 'From pasted JSON; nothing was fetched.'), $('vPhrase').value, tier); }
     catch (e) { $('vErr').textContent = 'invalid JSON or beacon: ' + (e.message || e); }
   });
 
@@ -630,9 +692,9 @@
       const when = utc(SP.roundTime(r)).slice(11) + ' UTC';
       const row = rows.get(r);
       let N = null;
-      try { if (row && Number(row.round) === r && SP.randomnessMatches(String(row.randomness), String(row.signature))) N = SP.deriveN(String(row.randomness).toLowerCase()); } catch (e) { N = null; }
+      try { if (row && Number(row.round) === r && SP.randomnessMatches(String(row.randomness), String(row.signature))) N = SP.deriveN(String(row.randomness).toLowerCase(), tier); } catch (e) { N = null; }
       if (N === null) { items.push('<li class="gap">round ' + r + ' · ' + when + ' · unavailable</li>'); continue; }
-      items.push('<li><span class="n">' + SP.formatN(N) + '</span><span class="meta">round ' + r + ' · ' + when + ' · <button class="link" data-verify="' + r + '">verify</button></span><span class="w">' + SP.encodeN(N).join(' ') + '</span></li>');
+      items.push('<li><span class="n">' + SP.formatN(N, tier) + '</span><span class="meta">round ' + r + ' · ' + when + ' · <button class="link" data-verify="' + r + '">verify</button></span><span class="w">' + SP.encodeN(N, tier).join(' ') + '</span></li>');
     }
     list.innerHTML = items.join('');
     err.textContent = failed ? failed + ' round' + (failed > 1 ? 's' : '') + ' could not be fetched' : '';
@@ -647,6 +709,7 @@
     $('vFetchBtn').click();
     $('vCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+  applyTier();
   loadArchiveStatus();
 })();
 </script>

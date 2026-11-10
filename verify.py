@@ -7,8 +7,8 @@ Usage:
   python3 verify.py --check ROUND F [G]   check one or two factors (decimal or words)
   python3 verify.py --vectors             print test vectors for rounds in test-vectors.json
 
-  --digits D (before the other arguments) selects the size of N; default 10 (two 5-digit
-  factors, 3 words; a factor is 2 words). 16 is also defined (8-digit factors, 5 and 3 words).
+  --digits D (before the other arguments) selects the size of N; default 10. The page offers
+  5, 7, 10 and 16; 8, 12 and 14 are defined too (SPEC.md §2).
   --passphrase TEXT (before the other arguments) derives the personal number for the round and
   that passphrase (SPEC.md §8) instead of the public one.
 
@@ -25,24 +25,23 @@ DST = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_"
 RELAYS = ["https://api.drand.sh", "https://api2.drand.sh", "https://api3.drand.sh", "https://drand.cloudflare.com"]
 
 # ---- sizes (SPEC.md §2): digits of N -> parameters ----
-MIN_FERMAT = 1000                       # Fermat's method must need at least this many iterations
+from math import isqrt
 
-def isqrt(n):
-    import math
-    return math.isqrt(n)
-
-def make_size(digits, words, factor_words):
-    fd = digits // 2
-    HIGH = 10**fd                                    # factors are strictly below this
+def make_size(digits, words, factor_words, min_fermat):
     LOW = isqrt(10**(digits - 1) - 1) + 1            # ceil(sqrt(10^(digits-1))): p*q >= 10^(digits-1)
+    HIGH = min(isqrt(10**digits - 1) + 1,            # ceil(sqrt(10^digits)): p*q < 10^digits
+               1 << (11 * factor_words))             # and a factor must fit its words
     RANGE = HIGH - LOW
     LIMIT = (2**32 // RANGE) * RANGE                 # rejection threshold for the 32-bit sample
     WORD_MAX = 1 << (11 * words)                     # N must fit in `words` words
-    assert digits % 2 == 0 and fd <= 8 and WORD_MAX > 10**(digits - 1) and (1 << (11 * factor_words)) >= HIGH
-    return dict(digits=digits, factor_digits=fd, words=words, factor_words=factor_words,
+    assert 2 <= digits <= 16 and RANGE >= 100 and WORD_MAX > 10**(digits - 1)
+    return dict(digits=digits, words=words, factor_words=factor_words, MIN_FERMAT=min_fermat,
                 LOW=LOW, HIGH=HIGH, RANGE=RANGE, LIMIT=LIMIT, WORD_MAX=WORD_MAX)
 
-SIZES = {10: make_size(10, 3, 2), 16: make_size(16, 5, 3)}
+# digits: (words for N, words per factor, minimum Fermat iterations)
+SIZES = {d: make_size(d, *a) for d, a in {5: (2, 1, 5), 7: (2, 1, 20), 8: (3, 2, 100), 10: (3, 2, 1000),
+                                           12: (4, 2, 8000), 14: (5, 3, 60000), 16: (5, 3, 700000)}.items()}
+TIERS = [5, 7, 10, 16]                               # offered on the page and stored in the archive
 DEFAULT_DIGITS = 10
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,9 +73,9 @@ def next_prime(n):
     return n
 
 # ---- derivation (SPEC.md §3) ----
-def far_apart(p, q):
-    """(p+q)/2 - sqrt(pq) >= MIN_FERMAT, exactly in integers (SPEC.md §3.3)."""
-    s = p + q - 2 * MIN_FERMAT
+def far_apart(p, q, S):
+    """(p+q)/2 - sqrt(pq) >= S, exactly in integers (SPEC.md §3.3)."""
+    s = p + q - 2 * S
     return s >= 0 and s * s >= 4 * p * q
 
 def derive_prime(seed, tag, sz, accept=lambda f: True):
@@ -97,7 +96,7 @@ def derive_factors(seed_hex, digits=DEFAULT_DIGITS):
     seed = bytes.fromhex(seed_hex)
     assert len(seed) == 32
     p = derive_prime(seed, "p%d" % digits, sz)
-    q = derive_prime(seed, "q%d" % digits, sz, lambda f: f != p and p * f < sz["WORD_MAX"] and far_apart(p, f))
+    q = derive_prime(seed, "q%d" % digits, sz, lambda f: f != p and p * f < sz["WORD_MAX"] and far_apart(p, f, sz["MIN_FERMAT"]))
     return p, q
 
 # ---- personal numbers (SPEC.md §8) ----

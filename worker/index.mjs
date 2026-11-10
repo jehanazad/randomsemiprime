@@ -2,8 +2,9 @@
 // Requests on the old domain (randomsemiprime.com) are redirected permanently to primetotem.com.
 //
 //   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error}}
-//   GET /api/n/<10 digits>     -> {n, rounds: [{round, n, randomness, signature}, ...]} newest first, or 404
-//   GET /api/round/<round>     -> {round, n, randomness, signature} or 404
+//   GET /api/n/<digits>        -> {n, digits, rounds: [{round, n5, n7, n10, n16, randomness, signature}, ...]}
+//                                 newest first, or 404; the length of the number picks the tier
+//   GET /api/round/<round>     -> {round, n5, n7, n10, n16, randomness, signature} or 404
 //   GET /api/range?from=&to=   -> {rounds: [...]} for a round range, newest first, at most RANGE_LIMIT
 //
 // A cron trigger runs archiveTick every minute: it records rounds newer than the archive's last
@@ -17,7 +18,8 @@ import '../src/core.js';           // defines globalThis.SP (reads globalThis.__
 globalThis.__noble = { sha256 };
 const SP = globalThis.SP;
 const CHAIN = SP.CHAIN;
-const DIGITS = SP.DEFAULT_DIGITS;  // the size of N the archive stores
+const TIERS = SP.TIERS;            // the sizes of N the archive stores, one column each: n5, n7, n10, n16
+const COL = d => 'n' + d;
 const RANGE_LIMIT = 100;
 const CANONICAL_HOST = 'primetotem.com';
 const OLD_HOSTS = ['randomsemiprime.com', 'www.randomsemiprime.com', 'www.primetotem.com'];
@@ -60,7 +62,9 @@ export function rowFromBeacon(b, expectedRound) {
   const randomness = String(b.randomness).toLowerCase(), signature = String(b.signature).toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(randomness) || !/^[0-9a-f]{96}$/.test(signature)) throw new Error('malformed beacon');
   if (!SP.randomnessMatches(randomness, signature)) throw new Error('randomness != sha256(signature)');
-  return { round, n: SP.deriveN(randomness, DIGITS).toString(), randomness, signature };
+  const row = { round, randomness, signature };
+  for (const d of TIERS) row[COL(d)] = SP.deriveN(randomness, d).toString();
+  return row;
 }
 
 // ---- D1 ----
@@ -79,8 +83,10 @@ async function getMeta(db) {
 }
 async function insertRows(db, rows) {
   if (!rows.length) return;
-  const stmt = db.prepare('INSERT OR IGNORE INTO rounds (round, n, randomness, signature) VALUES (?1, ?2, ?3, ?4)');
-  await db.batch(rows.map(r => stmt.bind(r.round, r.n, r.randomness, r.signature)));
+  const cols = TIERS.map(COL);
+  const stmt = db.prepare('INSERT OR IGNORE INTO rounds (round, ' + cols.join(', ') + ', randomness, signature) VALUES (' +
+    Array.from({ length: cols.length + 3 }, (_, i) => '?' + (i + 1)).join(', ') + ')');
+  await db.batch(rows.map(r => stmt.bind(r.round, ...cols.map(c => r[c]), r.randomness, r.signature)));
 }
 
 // Fetch the given rounds (in order), PARALLEL at a time, within the budget and the deadline; stop at
@@ -140,7 +146,7 @@ async function runTick(env) {
 }
 
 // ---- HTTP API ----
-const ROW_COLS = 'round, n, randomness, signature';
+const ROW_COLS = 'round, ' + TIERS.map(COL).join(', ') + ', randomness, signature';
 async function api(url, env) {
   const p = url.pathname;
   let m;
@@ -148,14 +154,15 @@ async function api(url, env) {
     const b = await bounds(env.DB);
     let tick = {};
     try { tick = await getMeta(env.DB); } catch (e) { tick = { error: 'meta table missing' }; }
-    return json({ spec: 'beacon-semiprime v2', digits: DIGITS, chain: CHAIN.hash, ...b,
+    return json({ spec: 'beacon-semiprime v2', tiers: TIERS, chain: CHAIN.hash, ...b,
       firstTime: b.first ? SP.roundTime(b.first) : null, lastTime: b.last ? SP.roundTime(b.last) : null, tick }, 200, 'public, max-age=30');
   }
-  if ((m = new RegExp('^/api/n/(\\d{' + DIGITS + '})$').exec(p))) {
+  if ((m = /^\/api\/n\/(\d{1,20})$/.exec(p)) && TIERS.includes(m[1].length)) {
     // Distinct rounds can produce the same N (expected now and then; see README). The answer is
     // cached briefly, not immutably: backfill can add an older round later.
-    const { results } = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE n = ?1 ORDER BY round DESC').bind(m[1]).all();
-    return results.length ? json({ n: m[1], rounds: results }, 200, 'public, max-age=300') : json({ error: 'not in archive' }, 404);
+    const digits = m[1].length;
+    const { results } = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE ' + COL(digits) + ' = ?1 ORDER BY round DESC').bind(m[1]).all();
+    return results.length ? json({ n: m[1], digits, rounds: results }, 200, 'public, max-age=300') : json({ error: 'not in archive' }, 404);
   }
   if ((m = /^\/api\/round\/(\d{1,12})$/.exec(p))) {
     const row = await env.DB.prepare('SELECT ' + ROW_COLS + ' FROM rounds WHERE round = ?1').bind(Number(m[1])).first();
