@@ -107,7 +107,8 @@
   <!-- ================= LIVE ================= -->
   <section id="tab-live">
     <div class="card" id="liveCard">
-      <div class="row" style="margin-top:0; justify-content: space-between; align-items: flex-start">
+      <!-- wrap-reverse: when the button does not fit beside the number it moves to its own line above it, still at the right -->
+      <div class="row" style="margin-top:0; justify-content: space-between; flex-wrap: wrap-reverse; align-items: flex-end">
         <div class="N" id="liveN" style="margin-top:4px">— — — —</div>
         <button class="secondary" id="livePersonalBtn" disabled aria-expanded="false" style="margin-left:auto">Generate a personal totem</button>
       </div>
