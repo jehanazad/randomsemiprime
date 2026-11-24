@@ -8,7 +8,7 @@ Usage:
   python3 verify.py --vectors             print test vectors for rounds in test-vectors.json
 
   --digits D (before the other arguments) selects the size of N; default 10. The page offers
-  5, 7, 10 and 16; 8, 12 and 14 are defined too (SPEC.md §2).
+  7, 10 and 16; 5, 8, 12 and 14 are defined too (SPEC.md §2).
   --passphrase TEXT (before the other arguments) derives the personal number for the round and
   that passphrase (SPEC.md §8) instead of the public one.
 
@@ -41,7 +41,7 @@ def make_size(digits, words, factor_words, min_fermat):
 # digits: (words for N, words per factor, minimum Fermat iterations)
 SIZES = {d: make_size(d, *a) for d, a in {5: (2, 1, 5), 7: (2, 1, 20), 8: (3, 2, 100), 10: (3, 2, 1000),
                                            12: (4, 2, 8000), 14: (5, 3, 60000), 16: (5, 3, 700000)}.items()}
-TIERS = [5, 7, 10, 16]                               # offered on the page and stored in the archive
+TIERS = [7, 10, 16]                                  # offered on the page and stored in the archive
 DEFAULT_DIGITS = 10
 
 HERE = os.path.dirname(os.path.abspath(__file__))

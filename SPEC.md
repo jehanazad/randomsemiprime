@@ -66,8 +66,9 @@ Defined sizes:
 `N` always has exactly `D` digits. Where `WORD_MAX ≤ 10^D` (only `D = 10` among these) the
 word bound is a real constraint and §3.3 enforces it; elsewhere every `N` fits.
 
-The **tiers** offered on the page and stored in the archive are `5, 7, 10, 16`; 10 is the
-default. Sizes are derived independently from the same randomness (the tag in §3.2 carries `D`),
+The **tiers** offered on the page and stored in the archive are `7, 10, 16`; 10 is the
+default. 5 digits is defined but not offered: with 40 possible factors and a few hundred distinct
+values it proves nothing. Sizes are derived independently from the same randomness (the tag in §3.2 carries `D`),
 so one round yields a number of every size.
 
 ## 3. Derivation
@@ -137,8 +138,8 @@ Decoding is the inverse. When reading words typed by a person, an implementation
 any prefix of 4 or more letters that matches exactly one word (the BIP39 list guarantees the
 first four letters are unique), and MUST ignore letter case.
 
-Displayed digits are grouped for reading: `5` for `D = 5`, `3 4` for `D = 7`, `3 3 4` for
-`D = 10` (`236 939 3317`), `4 4 4 4` for `D = 16`. Grouping is presentation only; any spacing
+Displayed digits are grouped for reading: `3 4` for `D = 7`, `3 3 4` for `D = 10`
+(`236 939 3317`), `4 4 4 4` for `D = 16`. Grouping is presentation only; any spacing
 MUST be accepted on input. The digit count of a typed number, or the decoded value of typed
 words, identifies its size: the ranges of the tiers do not overlap.
 
@@ -154,8 +155,8 @@ An answer is one or two factors, each given either as a decimal integer or as `F
 
 ## 6. Archive
 
-A row of the archive maps a round to its `N` at every tier (columns `n5`, `n7`, `n10`,
-`n16`, stored as text), together with the round's randomness and signature. Readers MUST re-derive `N` from the randomness
+A row of the archive maps a round to its `N` at every tier (columns `n7`, `n10`, `n16`,
+stored as text), together with the round's randomness and signature. Readers MUST re-derive `N` from the randomness
 rather than trust the stored text, as the page does.
 
 ## 7. Personal numbers

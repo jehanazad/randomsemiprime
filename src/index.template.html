@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prime Totem</title>
 <link rel="icon" href="data:,">
-<meta name="description" content="Fresh semiprimes of 5, 7, 10 or 16 digits derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
+<meta name="description" content="Fresh semiprimes of 7, 10 or 16 digits derived deterministically from the drand quicknet randomness beacon, verifiable by anyone.">
 <style>
   :root {
     --bg: #f6f5f1; --fg: #1a1a1a; --muted: #6b6b66; --line: #d9d7d0; --card: #ffffff;
@@ -96,7 +96,6 @@
   <div class="tierbar">
     <span class="small">Size</span>
     <div class="seg" id="tierBar" role="radiogroup" aria-label="number size">
-      <button role="radio" aria-checked="false" data-digits="5">5 digits</button>
       <button role="radio" aria-checked="false" data-digits="7">7 digits</button>
       <button role="radio" aria-checked="true" data-digits="10">10 digits</button>
       <button role="radio" aria-checked="false" data-digits="16">16 digits</button>
@@ -171,7 +170,7 @@
   <!-- ================= VERIFY ================= -->
   <section id="tab-verify" hidden>
     <div class="card">
-      <label class="small" for="vQuery" style="display:block">Enter a round number, a number of 5, 7, 10 or 16 digits, or its words. A round number shows the size selected above.</label>
+      <label class="small" for="vQuery" style="display:block">Enter a round number, a number of 7, 10 or 16 digits, or its words. A round number shows the size selected above.</label>
       <input type="text" id="vQuery" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="round number · the digits (spaces allowed) · the words" style="margin-top:6px">
       <label class="small" for="vPhrase" style="display:block;margin-top:10px">Passphrase (optional): re-derives the personal number of a round. Needs the round number, since personal numbers are never in the archive.</label>
       <input type="text" id="vPhrase" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="passphrase" style="margin-top:6px">
@@ -235,12 +234,11 @@
       <h3 style="margin-top:0">What a prime totem is for</h3>
       <p>A prime totem is a single-use tool to confirm access to superhuman computation. It is a balanced semiprime: the product of two prime numbers of about the same size. The default is 10 digits, the product of two 5-digit primes. There is no record of a human factoring a balanced 10-digit semiprime mentally in a short time, so a prompt correct answer reflects superhuman computation. This page continually generates fresh totems, which can be given to an entity to check whether it has superhuman computational ability.</p>
       <h3>Sizes</h3>
-      <p>The size selector under the tabs offers four tiers, for when a bigger number cannot or will not be memorized. Smaller is weaker: with fewer possible prime factors, trial division gets short.</p>
+      <p>The size selector under the tabs offers three tiers, for when a bigger number cannot or will not be memorized. Smaller is weaker: with fewer possible prime factors, trial division gets short.</p>
       <ul>
         <li><b>16 digits</b>, 5 words: 3.8 million possible factors. Out of reach without a device.</li>
         <li><b>10 digits</b>, 3 words: about 6,000 possible factors and over a thousand trial divisions on a typical number. Hours of flawless mental arithmetic, with no record of anyone doing it. The recommended test.</li>
-        <li><b>7 digits</b>, 2 words: 141 possible factors, each one word. A trained mental calculator finds one in a few minutes, anyone with paper in a quarter of an hour. Shows real work, not superhuman work.</li>
-        <li><b>5 digits</b>, 2 words: 40 possible factors and only a few hundred distinct totems, which could be memorized outright. A floor for when nothing bigger will do: it shows the totem is fresh and the entity can factor at all, nothing more.</li>
+        <li><b>7 digits</b>, 2 words: 141 possible factors, each one word. A trained mental calculator finds one in a few minutes, anyone with paper in a quarter of an hour. Shows real work, not superhuman work. Anything shorter would prove nothing: a 5-digit semiprime has 40 possible factors and only a few hundred distinct values, which could be memorized outright.</li>
       </ul>
       <p>The test is only meaningful if the entity could not have known the number in advance. So every totem comes from the <a href="https://drand.love" target="_blank" rel="noopener">drand</a> quicknet beacon, a public source of randomness that publishes a new signed round every 3 seconds and that nobody, this site included, can predict or steer. Each round is turned into one totem by a fixed, public rule, so the number showing at any moment was the only number that could have shown, and it did not exist before that moment.</p>
       <h3>How to run a test</h3>
@@ -259,12 +257,12 @@
         <li>For tag <code>"p10"</code>, then <code>"q10"</code>: compute <code>SHA-256(randomness ‖ tag ‖ ctr)</code> with a one-byte counter starting at 0; take the first 4 bytes as a big-endian integer <i>x</i>; reject and increment the counter if <i>x</i> ≥ 4 294 964 501; otherwise the candidate is <code>31623 + (x mod 68377)</code>.</li>
         <li>The factor is the smallest prime ≥ candidate (primality by trial division to 10⁴, which is exact below 10⁸). Reject if it reaches 10⁵. For <i>q</i>, also reject if it equals <i>p</i>, if <i>p·q</i> ≥ 2³³ (the number would not fit in three words), or if the two are too close together: Fermat's method finds factors near √<i>N</i> quickly, so it must need at least 1 000 iterations, i.e. <code>(p+q)/2 − √(p·q) ≥ 1000</code>.</li>
         <li><i>N = p·q</i>. The lower bound ⌈√10·10⁴⌉ guarantees exactly 10 digits.</li>
-        <li>Every size follows the same rule with its own tags (<code>"p5"</code>, <code>"p7"</code>, <code>"p16"</code>, …) and bounds: factors from ⌈√(10<sup>D−1</sup>)⌉ up to ⌈√(10<sup>D</sup>)⌉, capped so that a factor fits its words (so 7-digit numbers have factors from 1000 to 2047), and a Fermat minimum of 5, 20, 1 000 and 700 000 iterations for 5, 7, 10 and 16 digits. One round therefore yields a number of each size, derived independently.</li>
+        <li>Every size follows the same rule with its own tags (<code>"p7"</code>, <code>"p16"</code>, …) and bounds: factors from ⌈√(10<sup>D−1</sup>)⌉ up to ⌈√(10<sup>D</sup>)⌉, capped so that a factor fits its words (so 7-digit numbers have factors from 1000 to 2047), and a Fermat minimum of 20, 1 000 and 700 000 iterations for 7, 10 and 16 digits. One round therefore yields a number of each size, derived independently.</li>
       </ol>
       <h3>Personal numbers</h3>
       <p>The public totem is the same for everyone looking at the site, and it sits in the archive. A personal number is yours alone: press <b>Generate a personal totem</b> at the top right of the number, enter a passphrase, and the page hashes the round's randomness together with your passphrase and runs the same rule on the result. The passphrase only has to be yours and unknown to the entity; the round still makes the number unpredictable before it existed. Everything happens in your browser: the passphrase and the number are never sent anywhere and never stored. To check it later, go to <b>Verify</b> and enter the round number and the same passphrase. The copy button beside a number puts a short note on the clipboard: the number, its words, the passphrase for a personal number, the round and its time. Keep a personal note private, since it carries the passphrase. <code>verify.py --passphrase</code> does the same offline.</p>
       <h3>Words</h3>
-      <p>The number is also shown as words from the BIP39 English list (base-2048, 11 bits per word, big-endian; 2, 2, 3 or 5 words for 5, 7, 10 or 16 digits), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as words (one word at 5 and 7 digits, two at 10, three at 16), and the Verify fields accept words wherever they accept digits. The script at 10 digits then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
+      <p>The number is also shown as words from the BIP39 English list (base-2048, 11 bits per word, big-endian; 2, 3 or 5 words for 7, 10 or 16 digits), as an alternative for passing it on by voice: a misheard digit goes unnoticed, while a misheard word is usually caught, since it has to be on the list and only its first 4 letters matter. The entity needs the word list to turn them back into a number, so digits are the default. A factor can likewise be given as words (one word at 7 digits, two at 10, three at 16), and the Verify fields accept words wherever they accept digits. The script at 10 digits then reads: <i>"These three BIP39 words encode a 10-digit number, big-endian: word word word. Please give one prime factor of that number, as five digits or two BIP39 words."</i></p>
       <h3>Verify independently</h3>
       <p>The repo ships <code>verify.py</code> (standard library only; <code>py_ecc</code> optional for the signature check) and test vectors. Run <code>python3 verify.py ROUND</code>. A number or its words can be traced back to their round through this site's archive, which only names the round; the signature is always re-checked in your browser.</p>
       <p class="small" id="archiveStatus"></p>

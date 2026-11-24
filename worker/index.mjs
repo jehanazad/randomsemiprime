@@ -2,9 +2,9 @@
 // Requests on the old domain (randomsemiprime.com) are redirected permanently to primetotem.com.
 //
 //   GET /api/status            -> {first, last, count, firstTime, lastTime, tick: {started, finished, error}}
-//   GET /api/n/<digits>        -> {n, digits, rounds: [{round, n5, n7, n10, n16, randomness, signature}, ...]}
+//   GET /api/n/<digits>        -> {n, digits, rounds: [{round, n7, n10, n16, randomness, signature}, ...]}
 //                                 newest first, or 404; the length of the number picks the tier
-//   GET /api/round/<round>     -> {round, n5, n7, n10, n16, randomness, signature} or 404
+//   GET /api/round/<round>     -> {round, n7, n10, n16, randomness, signature} or 404
 //   GET /api/range?from=&to=   -> {rounds: [...]} for a round range, newest first, at most RANGE_LIMIT
 //
 // A cron trigger runs archiveTick every minute: it records rounds newer than the archive's last
@@ -18,7 +18,7 @@ import '../src/core.js';           // defines globalThis.SP (reads globalThis.__
 globalThis.__noble = { sha256 };
 const SP = globalThis.SP;
 const CHAIN = SP.CHAIN;
-const TIERS = SP.TIERS;            // the sizes of N the archive stores, one column each: n5, n7, n10, n16
+const TIERS = SP.TIERS;            // the sizes of N the archive stores, one column each: n7, n10, n16
 const COL = d => 'n' + d;
 const RANGE_LIMIT = 100;
 const CANONICAL_HOST = 'primetotem.com';

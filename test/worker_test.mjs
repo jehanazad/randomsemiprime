@@ -20,7 +20,7 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
 // ---- unit: rowFromBeacon on real vectors ----
 const expectN = { 1: '3925560271', 20000000: '3744275237', 33470004: '2369393317' };
 const expectN7 = { 1: '2588479', 20000000: '2836039', 33470004: '1524599' };
-for (const v of VEC.rounds) { const r = rowFromBeacon(v, v.round); check(r.n10 === expectN[v.round] && r.n7 === expectN7[v.round] && r.n5.length === 5 && r.n16.length === 16, 'rowFromBeacon derives N at every tier for round ' + v.round); }
+for (const v of VEC.rounds) { const r = rowFromBeacon(v, v.round); check(r.n10 === expectN[v.round] && r.n7 === expectN7[v.round] && r.n16.length === 16 && !('n5' in r), 'rowFromBeacon derives N at every tier for round ' + v.round); }
 try { rowFromBeacon({ ...VEC.rounds[0], signature: VEC.rounds[1].signature }, 1); check(false, 'tampered signature rejected'); }
 catch (e) { check(/randomness/.test(e.message), 'tampered signature rejected: ' + e.message); }
 try { rowFromBeacon(VEC.rounds[0], 2); check(false, 'wrong round rejected'); }
@@ -65,7 +65,7 @@ globalThis.fetch = (...a) => { attempts++; return realFetch(...a); };
       const mk = a => ({
         run: async () => {
           if (/INTO meta/.test(sql)) meta.set(a[0], a[1]);
-          else rows.set(a[0], { round: a[0], n5: a[1], n7: a[2], n10: a[3], n16: a[4], randomness: a[5], signature: a[6] });
+          else rows.set(a[0], { round: a[0], n7: a[1], n10: a[2], n16: a[3], randomness: a[4], signature: a[5] });
         },
         first: async () => { const ks = [...rows.keys()]; return { first: ks.length ? Math.min(...ks) : null, last: ks.length ? Math.max(...ks) : null, count: ks.length }; },
       });
@@ -143,7 +143,7 @@ try {
   const range = (await get('/api/range?from=' + s1.first + '&to=' + s1.last)).body;
   check(range.rounds.length === 30 && range.rounds[0].round === s1.last && range.rounds[29].round === s1.first, 'range returns all rows newest first');
   const row = range.rounds[7];
-  check([5, 7, 10, 16].every(d => row['n' + d] === SP.deriveN(row.randomness, d).toString()), 'rows carry N at every tier, derived from randomness');
+  check([7, 10, 16].every(d => row['n' + d] === SP.deriveN(row.randomness, d).toString()), 'rows carry N at every tier, derived from randomness');
   const byN = await get('/api/n/' + row.n10);
   check(byN.status === 200 && byN.body.digits === 10 && byN.body.rounds.length === 1 && byN.body.rounds[0].round === row.round && /max-age=300/.test(byN.headers.get('cache-control')), 'lookup by N lists the round');
   const by7 = await get('/api/n/' + row.n7);
@@ -152,16 +152,16 @@ try {
   // only writable from outside while the dev server is stopped)
   await stopDev();
   const seedSql = path.join(ROOT, '.wrangler', 'seed-test.sql');
-  fs.writeFileSync(seedSql, `INSERT INTO rounds (round, n5, n7, n10, n16, randomness, signature) VALUES (7, '${row.n5}', '${row.n7}', '${row.n10}', '${row.n16}', '${row.randomness}', '${row.signature}');`);
+  fs.writeFileSync(seedSql, `INSERT INTO rounds (round, n7, n10, n16, randomness, signature) VALUES (7, '${row.n7}', '${row.n10}', '${row.n16}', '${row.randomness}', '${row.signature}');`);
   execSync('npx wrangler d1 execute randomsemiprime-archive --local --file ' + seedSql, { cwd: ROOT, stdio: 'ignore' });
   await startDev();
   const twins = await get('/api/n/' + row.n10);
   check(twins.body.rounds.length === 2 && twins.body.rounds[0].round === row.round && twins.body.rounds[1].round === 7, `colliding N lists both rounds newest first (${JSON.stringify(twins.body.rounds.map(r => r.round))})`);
   const byR = await get('/api/round/' + row.round);
-  check(byR.status === 200 && byR.body.n10 === row.n10 && byR.body.n5 === row.n5, 'lookup by round works');
+  check(byR.status === 200 && byR.body.n10 === row.n10 && byR.body.n7 === row.n7, 'lookup by round works');
   check((await get('/api/n/1234567890')).status === 404 && (await get('/api/n/1234567890123456')).status === 404, 'unknown N is 404');
-  check((await get('/api/n/123')).status === 404 && (await get('/api/n/12345678')).status === 404, 'N of a length that is not a tier is 404');
-  check(JSON.stringify(s1.tiers) === '[5,7,10,16]' && s1.spec === 'beacon-semiprime v2', 'status names the spec and tiers');
+  check((await get('/api/n/123')).status === 404 && (await get('/api/n/12345')).status === 404 && (await get('/api/n/12345678')).status === 404, 'N of a length that is not a tier is 404');
+  check(JSON.stringify(s1.tiers) === '[7,10,16]' && s1.spec === 'beacon-semiprime v2', 'status names the spec and tiers');
   check((await get('/api/range?from=5&to=4')).status === 400, 'reversed range is 400');
   check((await get('/api/range?from=1&to=101')).status === 400, '101-round range is 400');
   check((await get('/api/range?from=101&to=200')).body.rounds.length === 0, 'empty range is an empty list');

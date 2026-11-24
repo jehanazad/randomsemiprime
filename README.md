@@ -2,8 +2,8 @@
 
 A fresh balanced semiprime every 3 seconds, derived deterministically from the
 [drand](https://drand.love) quicknet randomness beacon, for live tests of mental factoring.
-The page offers four sizes, 5, 7, 10 (the default, two 5-digit primes) and 16 digits, each
-derived independently from the same round (`SPEC.md` §2 also defines 8, 12 and 14), and the two
+The page offers three sizes, 7, 10 (the default, two 5-digit primes) and 16 digits, each
+derived independently from the same round (`SPEC.md` §2 also defines 5, 8, 12 and 14), and the two
 primes are kept far enough apart that Fermat's method is never the easy way in.
 Live at [primetotem.com](https://primetotem.com) (randomsemiprime.com redirects there).
 
@@ -21,7 +21,7 @@ the browser.
 
 1. **Generate** shows the number from the round that was current when you arrived, as digits
    and as words (10 digits and 3 words by default; the size selector under the tabs switches
-   every view to 5, 7, 10 or 16 digits). It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
+   every view to 7, 10 or 16 digits). It stays put so it can be read calmly; new rounds keep arriving every 3 s in the
    **Recent rounds** list below it (newest first, last 200 kept). **Update** replaces the shown
    number with the newest round.
 2. **Verify** takes a round number, a number of any tier's length (spaces between digit groups
@@ -56,12 +56,12 @@ August 2023, so full backfill takes a long time at the default budget; raise it 
 A failed relay request stops that run's backfill at the failed round, so the archive never has
 holes between its first and last round.
 
-The archive maps a number at each tier (columns `n5`, `n7`, `n10`, `n16`) to its round and stores
+The archive maps a number at each tier (columns `n7`, `n10`, `n16`) to its round and stores
 the round's randomness and signature. The
 Worker checks `randomness = SHA-256(signature)` but not the BLS signature (that would exceed the
 free plan's 10 ms of CPU per run); the page re-verifies the signature itself, so a wrong or
 tampered archive row is rejected in the browser and never shown as genuine. Distinct rounds can
-share a number (at 10 digits within any few hours of rounds; at 5 digits constantly), so a
+share a number (at 10 digits within any few hours of rounds; at 7 digits every few minutes), so a
 lookup by number returns every round that produced it. Budget note: the whole tick is CPU-light (about 4 ms for 45 rounds in Node), but if
 the Cloudflare logs show CPU-limit errors on the free plan, lower `SUBREQUEST_BUDGET`. D1 calls
 count against a separate, higher limit and are not budgeted.
@@ -81,7 +81,7 @@ python3 verify.py 33470004            # fetch the round, check it, derive N and 
 python3 verify.py --json round.json   # same, offline
 python3 verify.py --check 33470004 73037
 python3 verify.py --check 33470004 afford predict
-python3 verify.py --digits 7 33470004    # the 7-digit number of the same round (5, 7, 10, 16 and more)
+python3 verify.py --digits 7 33470004    # the 7-digit number of the same round (7, 10, 16 and more)
 python3 verify.py --passphrase 'open sesame' 33470004   # the personal number for that passphrase
 python3 verify.py --vectors           # print derivations for test-vectors.json, every size
 ```
@@ -151,8 +151,7 @@ and the page says the archive is unavailable.
   works by hand when the factors are close, needs about as many iterations as trial division
   needs divisions: over a thousand at 10 digits. Nothing stops a device.
 - Smaller sizes prove less. At 7 digits there are 141 possible factors, a few minutes' work for
-  a trained calculator; at 5 digits there are 40, and only a few hundred distinct numbers. The
-  How it Works tab says what each tier shows.
+  a trained calculator. The How it Works tab says what each tier shows.
 - The page never displays the factors; it only checks answers. That is a courtesy against
   shoulder-surfing, not a secret: anyone with the round number and the spec can compute them.
 

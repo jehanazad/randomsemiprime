@@ -59,7 +59,7 @@
     14: makeSize(14, 5, 3, 60000, [3, 3, 4, 4]),
     16: makeSize(16, 5, 3, 700000, [4, 4, 4, 4]),  // factors 31622777..99999999
   };
-  const TIERS = [5, 7, 10, 16];
+  const TIERS = [7, 10, 16];
   const DEFAULT_DIGITS = 10;
   function size(digits) {
     const s = SIZES[digits === undefined ? DEFAULT_DIGITS : digits];
